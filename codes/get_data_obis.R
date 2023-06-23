@@ -12,6 +12,6 @@ library(obissdm)
 splist <- read.csv("data/obis_splist_20230622.csv")
 
 # Get data from OBIS and save
-mp_get_obis(sci_names = splist$taxonID)
+mp_get_obis(sci_names = splist$taxonID, mode = "full")
 
 # END
