@@ -19,31 +19,42 @@ starea <- st_buffer(starea, 0.5)
 
 starea_bbox <- st_bbox(starea)
 
-# Because the study area is quite large, we divide it in blocks to run
+# Because the study area is complex, we divide it in blocks to run
 # each one separately
-grid <- rast(ext(starea_bbox), nrows = 25, ncols = 25)
-grid[] <- 1:625
-grid <- as.polygons(grid)
-grid <- st_as_sf(grid)
+grid <- st_make_grid(starea, n = c(25, 25))
 
 starea_grid <- st_intersection(starea, grid)
 
+
 # Get the checklist of species for each area
+cli_progress_bar(
+  format = paste0(
+    "{pb_spin} Getting species list - Number of species until now: {nrow(sp_list)} ",
+    "{pb_bar} {pb_percent} ETA:{pb_eta}"
+  ),
+  format_done = paste0(
+    "{col_green(symbol$tick)} Retrieved {nrow(sp_list)} species ",
+    "in {pb_elapsed}."
+  ),
+  total = nrow(starea_grid)
+)
 for (i in 1:nrow(starea_grid)) {
-  cat(i)
   dat <- checklist(geometry = st_as_text(st_geometry(starea_grid[i,])))
   if (i == 1) {
     sp_list <- dat
   } else {
     sp_list <- bind_rows(sp_list, dat)
+    sp_list <- sp_list %>% distinct(taxonID, .keep_all = T)
   }
   rm(dat)
+  cli_progress_update()
 }
+cli_progress_done()
 
 # Filter according to project
 final_list <- sp_list %>%
   filter(taxonRank == "Species") %>%
-  filter(!kingdom %in% c("Archaea", "Bacteria", "Fungi", "Protozoa")) %>%
+  filter(!kingdom %in% c("Archaea", "Bacteria", "Fungi", "Protozoa", "Viruses")) %>%
   filter(taxonomicStatus == "accepted") %>% 
   filter(!is.na(is_marine) | !is.na(is_brackish) | !is.na(is_terrestrial) | !is.na(is_freshwater)) %>%
   rowwise() %>%

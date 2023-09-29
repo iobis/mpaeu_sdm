@@ -1,169 +1,165 @@
 #### MPA EUROPE PROJECT ####
 # June 2023
-# OBIS contribution to the MPA Europe porject
+# OBIS contribution to the MPA Europe project
 # s.principe@unesco.org
 
 #### Get list of marine species occurring on the study area on GBIF
 
 # Load packages
-library(arrow)
+library(rgbif)
 library(sf)
 library(terra)
 library(tidyverse)
 library(worrms)
+library(cli)
 sf_use_s2(FALSE)
 
 # Load study area
 starea <- st_read("data/shapefiles/mpa_europe_starea_v2.shp")
 starea <- st_buffer(starea, 0.5)
 
-starea_bbox <- st_bbox(starea)
+# We first download a list of all species occurring in a bounding box around the
+# whole study area. We do this because our study area is complex, and is not
+# possible to parse the geometry to the search.
+splist_download <- occ_download(pred("occurrenceStatus", "PRESENT"),
+                                pred_within(st_as_text(st_as_sfc(st_bbox(starea)))),
+                                format = "SPECIES_LIST")
 
-# Because the study area is quite large, we divide it in blocks to run
+# Check if download is ready
+occ_download_wait(splist_download)
+
+# If ready, download
+splist_down_get <- occ_download_get(splist_download)
+
+# Import and delete zip file
+splist_bbox <- occ_download_import(splist_down_get)
+file.remove(splist_down_get)
+
+# We then obtain the list of species only on the study area
+# using the function occ_count - because the function will return only
+# the taxon keys, we will need the list we obtained earlier to do the match
+# (otherwise retrieving the names using name_usage for example would take long)
+
+# Because the study area is complex, we divide it in blocks to run
 # each one separately
-grid <- rast(ext(starea_bbox), nrows = 15, ncols = 15)
-grid[] <- 1:225
-grid <- as.polygons(grid)
-grid <- st_as_sf(grid)
+grid <- st_make_grid(starea, n = c(25, 25))
 
 starea_grid <- st_intersection(starea, grid)
 
 # Get information from GBIF
-# You can both use the AWS full export, or download first a local parquet with all the
-# records in the study area. (see get_data_gbif.R)
-gbif_snapshot <- "s3://gbif-open-data-eu-central-1/occurrence/2023-06-01/occurrence.parquet"
-#gbif_snapshot <- "~/Research/mpa_europe/mpaeu_msdm/data/gbif.parquet"
-df <- open_dataset(gbif_snapshot)
-
-for (i in 1:nrow(starea_grid)) {
-  cat(i, "\n")
-  # Define area
-  starea_gr_bbox <- st_bbox(starea_grid[i,])
-  
-  # Obtain data
-  dat <- df %>% 
-    select(genus, species, scientificname, decimallongitude, decimallatitude, taxonrank, kingdom) %>%
-    #slice_head(n=1) %>%
-    filter(
-      decimallongitude >= starea_gr_bbox["xmin"] & decimallongitude <= starea_gr_bbox["xmax"],
-      decimallatitude >= starea_gr_bbox["ymin"] & decimallatitude <= starea_gr_bbox["ymax"]
-    ) %>%
-    filter(taxonrank == "SPECIES") %>%
-    filter(!kingdom %in% c("Archaea", "Bacteria", "Fungi", "Protozoa")) %>%
-    #select(genus, species, scientificname, decimallongitude, decimallatitude) %>%
-    collect()
-  
-  # Convert to SF
-  dat_sf <- st_as_sf(dat, coords = c("decimallongitude", "decimallatitude")) 
-  st_crs(dat_sf) <- st_crs(starea_grid)
-  
-  # See if is inside the study area
-  inter <- st_contains(starea_grid[i,1], dat_sf, sparse = F)
-  
-  dat <- dat[inter[1,],]
-  
-  # Retrieve only unique species
-  dat <- dat %>%
-    distinct(scientificname, .keep_all = T) %>%
-    select(-decimallongitude, -decimallatitude, -taxonrank)
-  
-  if (i == 1) {
-    sp_list <- dat
+# Set a progress bar to track results
+cli_progress_bar(
+  format = paste0(
+    "{pb_spin} Getting species list - Number of species until now: {nrow(counts_list)} ",
+    "{pb_bar} {pb_percent} ETA:{pb_eta}"
+  ),
+  format_done = paste0(
+    "{col_green(symbol$tick)} Retrieved {nrow(counts_list)} species ",
+    "in {pb_elapsed}."
+  ),
+  total = nrow(starea_grid)
+)
+for (z in 1:nrow(starea_grid)) {
+  counts <- occ_count(facet="speciesKey", facetLimit=200000,
+                      geometry = st_as_text(st_geometry(starea_grid[z,])))
+  if (z == 1) {
+    counts_list <- counts
   } else {
-    sp_list <- bind_rows(sp_list, dat)
+    counts_list <- bind_rows(counts_list, counts)
+    counts_list <- counts_list %>% distinct(speciesKey, .keep_all = T)
   }
-  rm(dat)
+  cli_progress_update()
 }
+cli_progress_done()
 
-# Get only the unique species
-sp_list <- sp_list %>%
-  distinct(scientificname, .keep_all = T)
 
-# Check which are marine species
-breaks <- seq(1, nrow(sp_list), by = 50)
-breaks <- c(breaks, nrow(sp_list))
-breaks <- breaks[-1]
+# Match both lists
+splist_bbox$speciesKey <- as.character(splist_bbox$speciesKey)
+match_list <- left_join(counts_list, splist_bbox, by = "speciesKey")
+
+# Filter to remove other ranks and synonyms
+# We also remove taxa from kingdoms like Bacteria and Fungi
+match_list <- match_list %>%
+  filter(taxonRank == "SPECIES") %>%
+  filter(taxonomicStatus == "ACCEPTED") %>%
+  filter(!kingdom %in% c("Archaea", "Bacteria", "Fungi", "Protozoa", "Viruses"))
+
+# See if species is marine
+# We need to run in batches due to the way the worms API works...
+
+blocks <- seq(100, nrow(match_list), by = 100)
+blocks <- c(blocks, nrow(match_list))
+
 st <- 1
-
-# Get one example of result to use when nothing is returned
-ex <- wm_records_names("Acanthurus chirurgus")
-ex <- ex[[1]]
-ex[,] <- NA
-
-# Run for all
-cli::cli_progress_bar("Checking species", total = length(breaks))
-for (i in 1:length(breaks)) {
-  recs <- try(wm_records_names(sp_list$species[st:breaks[i]]))
-  if (class(recs) != "try-error") {
-    recs <- lapply(1:length(recs), function(z){
-      x <- recs[[z]]
-      if (nrow(x) < 1) {
-        x <- ex
-      } else {
-        if (nrow(x) > 1) {
-          x <- x[x$status != "unaccepted",]
-          if (nrow(x) > 1) {
-            if ("accepted" %in% x$status) {
-              x <- x[x$status == "accepted",]
-            }
-          }
-          if (nrow(x) > 1) {
-            auth <- sp_list$scientificname[st:breaks[i]][z]
-            auth <- str_trim(gsub("\\(|\\)", "", auth))
-            full_names <- mutate(x, f_nam = paste(scientificname, authority))
-            ldist <- adist(auth, full_names$f_nam)[1,]
-            x <- x[which.min(ldist),]
-            warning("Multiple matches for ", auth, ".\nMatched with: ", x$scientificname, " ", x$authority)
-          }
-          if (nrow(x) < 1) {
-            x <- ex
-          }
-        } else {
-          x
-        }
-      }
-      return(x)
-    })
-    recs <- bind_rows(recs)
-    recs$gbif_species <- sp_list$species[st:breaks[i]]
-    recs$gbif_names <- sp_list$scientificname[st:breaks[i]]
-    if (i == 1) {
-      full_recs <- recs
-    } else {
-      full_recs <- bind_rows(full_recs, recs)
-    }
+cli_progress_bar(total = length(blocks))
+for (z in 1:length(blocks)) {
+ 
+  block_list <- match_list[st:blocks[z],]
+  
+  worms_res <- try(wm_records_names(block_list$species,
+                                    fuzzy = F, marine_only = T))
+  
+  if (class(worms_res)[1] == "try-error") {
+    marine <- FALSE
   } else {
-    recs <- ex
-    recs <- tibble::add_row(recs, AphiaID = rep(NA, length(st:breaks[i])-1))
-    recs$gbif_species <- sp_list$species[st:breaks[i]]
-    recs$gbif_names <- sp_list$scientificname[st:breaks[i]]
-    if (i == 1) {
-      full_recs <- recs
+    marine <- TRUE
+  }
+  
+  if (marine) {
+    
+    worms_res <- lapply(1:length(worms_res), function(x){
+      
+      wmr <- worms_res[[x]]
+      
+      if (nrow(wmr) > 0) {
+        if ("accepted" %in% wmr$status) {
+          wmr <- wmr[wmr$status == "accepted",]
+        } else {
+          if (!is.na(wmr$valid_AphiaID[1])) {
+            wmr <- wm_record(wmr$valid_AphiaID[1])[1,]
+          } else {
+            wmr <- wmr[1,]
+          }
+        }
+        wmr$gbif_speciesKey <- block_list$speciesKey[x]
+        wmr$gbif_taxonKey <- block_list$taxonKey[x]
+        wmr$gbif_scientificName <- block_list$scientificName[x]
+      }
+      return(wmr)
+    })
+    
+    worms_res <- bind_rows(worms_res)
+    
+    if (!exists("marine_list")) {
+      marine_list <- worms_res
     } else {
-      full_recs <- bind_rows(full_recs, recs)
+      marine_list <- bind_rows(marine_list, worms_res)
     }
   }
-  st <- breaks[i]+1
-  cli::cli_progress_update()
+  
+  st <- blocks[z] + 1
+  cli_progress_update()
 }
-cli::cli_progress_done()
+cli_progress_done()
 
-# Remove those that are not marine
-final_list <- full_recs[!is.na(full_recs$AphiaID),]
-final_list$isExtinct <- ifelse(is.na(final_list$isExtinct),
-                               -1, final_list$isExtinct)
+# table(marine_list$status)
+
+marine_list$isExtinct[is.na(marine_list$isExtinct)] <- -1
+
+# Filter again to remove those not accepted
+marine_list_final <- marine_list %>%
+  filter(isExtinct != 1) %>%
+  filter(status == "accepted") %>%
+  distinct(AphiaID, .keep_all = T) %>%
+  filter(rank == "Species")
 
 # Save one with the flags
-write.csv(final_list,
+write.csv(marine_list,
           paste0("data/gbif_splist_flagged_", format(Sys.Date(), "%Y%m%d"), ".csv"),
           row.names = F)
 
 # Save one without the extincts and with only the unique species
-final_list <- final_list[final_list$isExtinct != 1, ]
-final_list <- final_list %>%
-  distinct(valid_name, .keep_all = T)
-
-write.csv(final_list,
+write.csv(marine_list_final,
           paste0("data/gbif_splist_", format(Sys.Date(), "%Y%m%d"), ".csv"),
           row.names = F)
 

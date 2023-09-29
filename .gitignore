@@ -51,3 +51,10 @@ rsconnect/
 
 data/raw/
 data/species/
+data/env/
+data/shapefiles/
+data/iucn/
+data/virtual_species/
+data/virtual_species_oldversion/
+results/
+temp_files/
