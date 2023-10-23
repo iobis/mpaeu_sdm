@@ -60,13 +60,13 @@ cli_progress_bar(
   total = nrow(starea_grid)
 )
 for (z in 1:nrow(starea_grid)) {
-  counts <- occ_count(facet="speciesKey", facetLimit=200000,
+  counts <- occ_count(facet="taxonKey", facetLimit=200000,
                       geometry = st_as_text(st_geometry(starea_grid[z,])))
   if (z == 1) {
     counts_list <- counts
   } else {
     counts_list <- bind_rows(counts_list, counts)
-    counts_list <- counts_list %>% distinct(speciesKey, .keep_all = T)
+    counts_list <- counts_list %>% distinct(taxonKey, .keep_all = T)
   }
   cli_progress_update()
 }
@@ -74,15 +74,16 @@ cli_progress_done()
 
 
 # Match both lists
-splist_bbox$speciesKey <- as.character(splist_bbox$speciesKey)
-match_list <- left_join(counts_list, splist_bbox, by = "speciesKey")
+splist_bbox$taxonKey <- as.character(splist_bbox$taxonKey)
+match_list <- left_join(counts_list, splist_bbox, by = "taxonKey")
 
 # Filter to remove other ranks and synonyms
 # We also remove taxa from kingdoms like Bacteria and Fungi
 match_list <- match_list %>%
   filter(taxonRank == "SPECIES") %>%
   filter(taxonomicStatus == "ACCEPTED") %>%
-  filter(!kingdom %in% c("Archaea", "Bacteria", "Fungi", "Protozoa", "Viruses"))
+  filter(!kingdom %in% c("Archaea", "Bacteria", "Fungi", "Protozoa", "Viruses")) %>%
+  distinct(taxonKey, .keep_all = T)
 
 # See if species is marine
 # We need to run in batches due to the way the worms API works...
