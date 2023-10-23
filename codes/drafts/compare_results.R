@@ -293,7 +293,7 @@ ggplot(teste) +
 
 
 for (i in 1:length(sp)) {
-  time_f <- list.files(glue("results/vsp_testing/{sp[i]}"), pattern = "timings",
+  time_f <- list.files(glue("results/vsp_testing_old/{sp[i]}"), pattern = "timings",
                        full.names = T)
   
   sp_timings <- lapply(time_f, function(x){
@@ -314,7 +314,7 @@ for (i in 1:length(sp)) {
         gsub(
           glue("sp[[:digit:]]*[[:digit:]]_"),
           "",
-          gsub("results/vsp_testing/[[:digit:]]*[[:digit:]]/", "", x)
+          gsub("results/vsp_testing_old/[[:digit:]]*[[:digit:]]/", "", x)
         )))
     tim$bias <- bias
     tim$nsamp <- nsamp
@@ -334,18 +334,186 @@ for (i in 1:length(sp)) {
 }
 
 timings_summ <- all_timings %>%
-  group_by(step, model, sp) %>%
+  group_by(step, model) %>%
   summarise(mean_t = mean(time_minutes),
           uppr_t = mean(time_minutes) + sd(time_minutes),
           lwr_t = mean(time_minutes) - sd(time_minutes)) %>%
-  filter(step != "response curve")
+  filter(step != "response curve") %>%
+  mutate(model = toupper(gsub("_", " ", model)))
 
 
-ggplot(timings_summ, aes(color = model, fill = model)) +
+ggplot(timings_summ, aes(color = model)) +
   geom_line(aes(y = mean_t, x = step, group = model)) +
   #geom_ribbon(aes(ymin = lwr_t, ymax = uppr_t, x = step, group = model))
   xlab(NULL) + ylab("Cummulative mean time (in minutes, from the start)") +
-  scale_x_discrete(limits = c("tuning", "cv", "evaluate dataset", "evaluate final")) +
-  plot_theme
+  scale_color_discrete("Model") +
+  scale_x_discrete(limits = c("tuning", "cv", "evaluate dataset", "evaluate final"),
+                   labels = c("Tuning", "Cross-validation", "Evaluate dataset", "Evaluate final model")) +
+  plot_theme + theme(axis.text.x = element_text(angle = 0))
 
 ggsave("timings_vsp.png", width = 1280*2, height = 720*2, unit = "px")
+
+
+
+
+### Plot example maps for reference
+
+ori_curr <- rast("data/virtual_species/key=101/suitability_key101.tif")
+ori_ssp1 <- rast("data/virtual_species/key=101/ssp1_suitability_key101.tif")
+
+max_curr <- rast("results/vsp_testing_old/101/sp101_bias_high_rep1_maxnet_current.tif")
+max_ssp1 <- rast("results/vsp_testing_old/101/sp101_bias_high_rep1_maxnet_ssp1.tif")
+
+brt_curr <- rast("results/vsp_testing_old/101/sp101_bias_high_rep1_brt_naive_current.tif")
+brt_ssp1 <- rast("results/vsp_testing_old/101/sp101_bias_high_rep1_brt_naive_ssp1.tif")
+
+las_curr <- rast("results/vsp_testing_old/101/sp101_bias_high_rep1_lasso_current.tif")
+las_ssp1 <- rast("results/vsp_testing_old/101/sp101_bias_high_rep1_lasso_ssp1.tif")
+
+rfd_curr <- rast("results/vsp_testing_old/101/sp101_bias_high_rep1_rf_downsampled_current.tif")
+rfd_ssp1 <- rast("results/vsp_testing_old/101/sp101_bias_high_rep1_rf_downsampled_ssp1.tif")
+
+europe <- vect("data/shapefiles/mpa_europe_starea_v2.shp")
+
+ori_curr <- (ori_curr - global(ori_curr, min, na.rm = T)[,1])/(global(ori_curr, max, na.rm = T)[,1] - global(ori_curr, min, na.rm = T)[,1])
+ori_ssp1 <- (ori_ssp1 - global(ori_ssp1, min, na.rm = T)[,1])/(global(ori_ssp1, max, na.rm = T)[,1] - global(ori_ssp1, min, na.rm = T)[,1])
+max_curr <- (max_curr - global(max_curr, min, na.rm = T)[,1])/(global(max_curr, max, na.rm = T)[,1] - global(max_curr, min, na.rm = T)[,1])
+max_ssp1 <- (max_ssp1 - global(max_ssp1, min, na.rm = T)[,1])/(global(max_ssp1, max, na.rm = T)[,1] - global(max_ssp1, min, na.rm = T)[,1])
+brt_curr <- (brt_curr - global(brt_curr, min, na.rm = T)[,1])/(global(brt_curr, max, na.rm = T)[,1] - global(brt_curr, min, na.rm = T)[,1])
+brt_ssp1 <- (brt_ssp1 - global(brt_ssp1, min, na.rm = T)[,1])/(global(brt_ssp1, max, na.rm = T)[,1] - global(brt_ssp1, min, na.rm = T)[,1])
+las_curr <- (las_curr - global(las_curr, min, na.rm = T)[,1])/(global(las_curr, max, na.rm = T)[,1] - global(las_curr, min, na.rm = T)[,1])
+las_ssp1 <- (las_ssp1 - global(las_ssp1, min, na.rm = T)[,1])/(global(las_ssp1, max, na.rm = T)[,1] - global(las_ssp1, min, na.rm = T)[,1])
+rfd_curr <- (rfd_curr - global(rfd_curr, min, na.rm = T)[,1])/(global(rfd_curr, max, na.rm = T)[,1] - global(rfd_curr, min, na.rm = T)[,1])
+rfd_ssp1 <- (rfd_ssp1 - global(rfd_ssp1, min, na.rm = T)[,1])/(global(rfd_ssp1, max, na.rm = T)[,1] - global(rfd_ssp1, min, na.rm = T)[,1])
+
+ori_curr <- crop(ori_curr, europe)
+ori_ssp1 <- crop(ori_ssp1, europe)
+max_curr <- crop(max_curr, europe)
+max_ssp1 <- crop(max_ssp1, europe)
+brt_curr <- crop(brt_curr, europe)
+brt_ssp1 <- crop(brt_ssp1, europe)
+las_curr <- crop(las_curr, europe)
+las_ssp1 <- crop(las_ssp1, europe)
+rfd_curr <- crop(rfd_curr, europe)
+rfd_ssp1 <- crop(rfd_ssp1, europe)
+
+max_curr <- mask(max_curr, ori_curr)
+max_ssp1 <- mask(max_ssp1, ori_curr)
+brt_curr <- mask(brt_curr, ori_curr)
+brt_ssp1 <- mask(brt_ssp1, ori_curr)
+las_curr <- mask(las_curr, ori_curr)
+las_ssp1 <- mask(las_ssp1, ori_curr)
+rfd_curr <- mask(rfd_curr, ori_curr)
+rfd_ssp1 <- mask(rfd_ssp1, ori_curr)
+
+
+ori_curr <- as.data.frame(ori_curr, xy = T)
+ori_ssp1 <- as.data.frame(ori_ssp1, xy = T)
+max_curr <- as.data.frame(max_curr, xy = T)
+max_ssp1 <- as.data.frame(max_ssp1, xy = T)
+brt_curr <- as.data.frame(brt_curr, xy = T)
+brt_ssp1 <- as.data.frame(brt_ssp1, xy = T)
+las_curr <- as.data.frame(las_curr, xy = T)
+las_ssp1 <- as.data.frame(las_ssp1, xy = T)
+rfd_curr <- as.data.frame(rfd_curr, xy = T)
+rfd_ssp1 <- as.data.frame(rfd_ssp1, xy = T)
+
+ori_curr$model <- "ori"
+ori_ssp1$model <- "ori"
+max_curr$model <- "max"
+max_ssp1$model <- "max"
+brt_curr$model <- "brt"
+brt_ssp1$model <- "brt"
+las_curr$model <- "las"
+las_ssp1$model <- "las"
+rfd_curr$model <- "rfd"
+rfd_ssp1$model <- "rfd"
+
+colnames(ori_curr)[3] <- "value"
+colnames(ori_ssp1)[3] <- "value"
+colnames(max_curr)[3] <- "value"
+colnames(max_ssp1)[3] <- "value"
+colnames(brt_curr)[3] <- "value"
+colnames(brt_ssp1)[3] <- "value"
+colnames(las_curr)[3] <- "value"
+colnames(las_ssp1)[3] <- "value"
+colnames(rfd_curr)[3] <- "value"
+colnames(rfd_ssp1)[3] <- "value"
+
+current <- data.frame(rbind(max_curr, brt_curr, las_curr, rfd_curr))
+future <- data.frame(rbind(max_curr, brt_curr, las_curr, rfd_curr))
+
+
+base <- rnaturalearth::ne_countries(returnclass = "sf")
+
+# New facet label names for dose variable
+new_labs <- c("Maxent", "BRT", "LASSO", "RF down-sampled")
+names(new_labs) <- c("max", "brt", "las", "rfd")
+
+p1 <- ggplot()+
+  geom_sf(data = base, fill = "grey80", color = "grey80") +
+  geom_raster(data = current, aes(x = x, y = y, fill = value)) +
+  coord_sf(xlim = c(-34, 41), ylim = c(24.5, 84.5)) +
+  scale_fill_distiller("", direction = 1) +
+  xlab(NULL) + ylab(NULL) +
+  theme_light() +
+  theme(panel.border = element_blank(),
+        legend.position = "none",
+        strip.background = element_blank(),
+        strip.text = element_text(color = "grey10"),
+        text = element_text(size = 6)) +
+  facet_wrap(~ model, labeller = labeller(model = new_labs))
+
+(p2 <- ggplot()+
+  geom_sf(data = base, fill = "grey80", color = "grey80") +
+  geom_raster(data = ori_curr, aes(x = x, y = y, fill = value)) +
+  coord_sf(xlim = c(-34, 41), ylim = c(24.5, 84.5)) +
+  scale_fill_distiller("", direction = 1) +
+  xlab(NULL) + ylab(NULL) +
+  ggtitle("Virtual species 101") +
+  theme_light() +
+  theme(panel.border = element_blank(),
+        legend.position = "none",
+        strip.background = element_blank(),
+        strip.text = element_text(color = "grey10"),
+        text = element_text(size = 6)))
+
+library(patchwork)
+
+p2 + p1
+
+ggsave("map_current.png", width = 1280*2, height = 720*2, unit = "px")
+
+
+p1 <- ggplot()+
+  geom_sf(data = base, fill = "grey80", color = "grey80") +
+  geom_raster(data = future, aes(x = x, y = y, fill = value)) +
+  coord_sf(xlim = c(-34, 41), ylim = c(24.5, 84.5)) +
+  scale_fill_distiller("", direction = 1) +
+  xlab(NULL) + ylab(NULL) +
+  theme_light() +
+  theme(panel.border = element_blank(),
+        legend.position = "none",
+        strip.background = element_blank(),
+        strip.text = element_text(color = "grey10"),
+        text = element_text(size = 6)) +
+  facet_wrap(~ model, labeller = labeller(model = new_labs))
+
+(p2 <- ggplot()+
+    geom_sf(data = base, fill = "grey80", color = "grey80") +
+    geom_raster(data = ori_ssp1, aes(x = x, y = y, fill = value)) +
+    coord_sf(xlim = c(-34, 41), ylim = c(24.5, 84.5)) +
+    scale_fill_distiller("", direction = 1) +
+    xlab(NULL) + ylab(NULL) +
+    ggtitle("Virtual species 101") +
+    theme_light() +
+    theme(panel.border = element_blank(),
+          legend.position = "none",
+          strip.background = element_blank(),
+          strip.text = element_text(color = "grey10"),
+          text = element_text(size = 6)))
+
+
+p2 + p1
+
+ggsave("map_future.png", width = 1280*2, height = 720*2, unit = "px")

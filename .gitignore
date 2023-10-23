@@ -53,8 +53,16 @@ data/raw/
 data/species/
 data/env/
 data/shapefiles/
+data/distances/
+data/log/
 data/iucn/
 data/virtual_species/
 data/virtual_species_oldversion/
+_species_info/
+sdmrun/
+sdmrun_b/
+sdmrun_c/
+storr/
+datastd/
 results/
 temp_files/

@@ -98,7 +98,7 @@ model_sp <- function(species) {
   colnames(pts) <- c("decimalLongitude", "decimalLatitude")
   ####
   
-  depth_sp <- extract(curr$bathymetry_mean, pts, ID = F)[,1]
+  depth_sp <- terra::extract(curr$bathymetry_mean, pts, ID = F)[,1]
   depth_lim <- ceiling(min(depth_sp) - 500)
   
   # Mask to depth
@@ -285,180 +285,264 @@ model_sp <- function(species) {
 # mclapply(species_list, model_sp, mc.cores = 5)
 
 model_sp(species_list[1])
+
+
+# Compare results with IUCN range
+iucn_compare <- data.frame(
+  species = NA,
+  model = paste(c("sreso", "areso"),
+                c("lasso_naive", "lasso_iwlr", "maxnet", "brt_naive", "rf_downsampled"),
+                sep = "_"),
+  jacc = NA
+)
+
+for (sp in species_list) {
+
+  iucdir <- tempdir()
+
+  unzip(paste0("data/iucn/iucn_", sp, ".zip"), exdir = iucdir)
+
+  iucn_range <- vect(paste0(iucdir, "/data_0.shp"))
+
+  iucn_compare$species <- sp
+
+
+
+
+  # Get mode of life
+  mode_life <- get_hab_info(sp)
+
+  if (mode_life == "NOT_FOUND" | mode_life == "pelagic" | mode_life == "pelagic_surface") {
+    depth_env <- "surf"
+  }
+  if (mode_life == "pelagic_mean") {
+    depth_env <- "mean"
+  }
+  if (mode_life == "benthic" | mode_life == "demersal" | mode_life == "pelagic_bottom") {
+    depth_env <- "max"
+  }
+
+  # Load list of environmental variables ----
+  env_vars <- c("thetao-mean", "so-mean", "po4-mean", "phyc-mean", "sws-max")
+
+  curr <- load_env(env_vars, depth = depth_env, terrain_vars = "bathymetry_mean")
+
+  # Load study area shapefile
+  # starea <- vect("data/shapefiles/mpa_europe_starea_v2.shp")
+  exp_starea <-  ext(-41, 47, 20, 89) # ext(starea) +- 5 degrees
+
+  # Crop to the expanded area (only the one that will be used for
+  # sampling the background)
+
+  # Remove Red sea
+  mregions <- mregions::mr_shp("MarineRegions:iho")
+  mregions <- mregions[mregions$name %in% c("Red Sea", "Gulf of Aqaba", "Gulf of Suez"),]
+
+  curr <- mask(crop(curr, exp_starea), mregions, inverse = T)
+
+  # See all available files
+  sp_files <- list.files(paste0("data/species/key=", sp),
+                         recursive = T, full.names = T)
+
+  # Get the most recent one
+  dates <- stringr::str_extract(sp_files, "date=[:digit:]*[:digit:]")
+  dates <- lubridate::as_date(gsub("date=", "", dates), format = "%Y%m%d")
+  sel_date <- min(dates)
+
+  sp_files <- sp_files[grepl(format(sel_date, "%Y%m%d"), sp_files)]
+
+  # Open file
+  #pts <- read_parquet()
+
+  #### TEMP
+  pts <- lapply(sp_files, function(x){
+    file <- read_parquet(x)
+    file[,c("decimalLongitude", "decimalLatitude")]
+  })
+  pts <- do.call("rbind", pts)
+
+  # get 1 point per cell
+  base <- curr[[1]]
+  base[] <- NA
+  base[cellFromXY(base, as.data.frame(pts))] <- 1
+  base <- mask(base, curr[[1]])
+
+  pts_full <- as.data.frame(base, xy = T)[,1:2]
+  colnames(pts_full) <- c("decimalLongitude", "decimalLatitude")
+  ####
+
+  depth_sp <- terra::extract(curr$bathymetry_mean, pts_full[,1:2], ID = F)[,1]
+  depth_lim <- ceiling(min(depth_sp) - 500)
+
+  # Mask to depth
+  bath_mask <- curr$bathymetry_mean
+  bath_mask[bath_mask < depth_lim] <- NA
+
+  curr <- mask(curr, bath_mask)
+
+  #### TEMP
+  pts <- lapply(sp_files, function(x){
+    file <- read_parquet(x)
+    file[,c("decimalLongitude", "decimalLatitude")]
+  })
+  pts <- do.call("rbind", pts)
+
+  # get 1 point per cell
+  base <- curr[[1]]
+  base <- terra::aggregate(base, fact = 2)
+  base[] <- NA
+  base[cellFromXY(base, as.data.frame(pts))] <- 1
+  base <- mask(base, terra::aggregate(curr[[1]], fact = 2))
+
+  pts_agg <- as.data.frame(base, xy = T)[,1:2]
+  colnames(pts_agg) <- c("decimalLongitude", "decimalLatitude")
+  ####
+
+  back <- spatSample(curr[[1]], 1000, xy = T, na.rm = T)[,1:2]
+  colnames(back) <- c("decimalLongitude", "decimalLatitude")
+
+  pts_agg <- rbind(cbind(pts_agg, presence = 1), cbind(back, presence = 0))
+  pts_full <- rbind(cbind(pts_full, presence = 1), cbind(back, presence = 0))
+
+
+  iucn_rast <- curr[[1]]
+
+  iucn_rast[] <- 1
+
+  iucn_rast <- mask(iucn_rast, crop(iucn_range, iucn_rast), updatevalue = 0)
+  iucn_rast <- mask(iucn_rast, curr[[1]])
+
+  for (z in 1:nrow(iucn_compare)) {
+    if (file.exists(paste0("results/species_test/", sp, "/sp", sp, "_", iucn_compare$model[z], "_current.tif"))) {
+      pred <- rast(paste0("results/species_test/", sp, "/sp", sp, "_", iucn_compare$model[z], "_current.tif"))
+      pred <- (pred - global(pred, min, na.rm = T)[,1]) /
+        (global(pred, max, na.rm = T)[,1] - global(pred, min, na.rm = T)[,1])
+      
+      if (grepl("areso", iucn_compare$model[z])) {
+        pred_pts <- terra::extract(pred, pts_agg[,1:2], ID = F)[,1]
+        obs <- pts_agg$presence
+      } else {
+        pred_pts <- terra::extract(pred, pts_full[,1:2], ID = F)[,1]
+        obs <- pts_full$presence
+      }
+      
+      th <- modEvA::getThreshold(obs = obs, pred = pred_pts,
+                                 threshMethod = "MTP", quant = 0.1)
+      
+      pred_bin <- pred
+      pred_bin[pred_bin < th] <- 0
+      pred_bin[pred_bin >= th] <- 1
+      
+      jacc <- function(rast1, rast2) {
+        comb <- rast1 + rast2
+        inter <- comb
+        union <- comb
+        inter[] <- ifelse(union[] >= 2, 1, 0)
+        union[] <- ifelse(comb[] >= 1, 1, 0)
+        
+        cinter <- freq(inter)
+        cunion <- freq(union)
+        
+        return((cinter$count[cinter$value == 1] / cunion$count[cunion$value == 1]))
+      }
+      
+      iucn_compare$jacc[z] <- jacc(pred_bin, iucn_rast)
+      
+      writeRaster(pred_bin,
+                  paste0("results/species_test/", sp, "/sp", sp, "_", iucn_compare$model[z], "_binp10_current.tif"),
+                  overwrite = T)
+    }
+  }
+
+  if (sp == species_list[1]) {
+    iucn_allsp <- iucn_compare
+  } else {
+    iucn_allsp <- rbind(iucn_allsp, iucn_compare)
+  }
+
+  iucn_compare$species <- iucn_compare$jacc <- NA
+
+}
+
+
+iucn_res <- iucn_allsp %>%
+  filter(!grepl("iwlr", model)) %>%
+  mutate(model = gsub("areso", "AGG", model)) %>%
+  mutate(model = gsub("sreso", "STD", model)) %>%
+  mutate(model = toupper(gsub("_", " ", model))) %>%
+  mutate(species = ifelse(species == 127138, "Hippoglossus hippoglossus",
+                          ifelse(species == 127061, "Pagrus auriga",
+                                 ifelse(species == 127063, "Pagrus pagrus",
+                                        "Solea solea"))))
+
+write.csv(iucn_res, "iucn_jacc_res.csv", row.names = F)
+
+
+# 
+# par(mfrow = c(1,3)) 
+# iuc <- tempdir()
+# unzip("data/iucn/iucn_127063.zip", exdir = iuc)
+# iucn <- sf::st_read(paste0(iuc, "/data_0.shp"))
+# pred_lasso <- rast("results/species_test/127063/sp127063_sreso_lasso_naive_current.tif")
+# pred_rf <- rast("results/species_test/127063/sp127063_sreso_rf_downsampled_current.tif")
+# 
+# pred_lasso <- as.data.frame(pred_lasso, xy = T)
+# colnames(pred_lasso)[3] <- "values"
+# 
+# pred_rf <- as.data.frame(pred_rf, xy = T)
+# colnames(pred_rf)[3] <- "values"
 # 
 # 
-# # Compare results with IUCN range
-# iucn_compare <- data.frame(
-#   species = NA,
-#   model = paste(c("sreso", "areso"),
-#                 c("lasso_naive", "lasso_iwlr", "maxnet", "brt_naive", "rf_downsampled"), 
-#                 sep = "_"),
-#   jacc = NA
-# )
+# base <- rnaturalearth::ne_countries(returnclass = "sf")
 # 
-# for (sp in species_list) {
-#   
-#   iucdir <- tempdir()
-#   
-#   unzip(paste0("data/iucn/iucn_", sp, ".zip"), exdir = iucdir)
-#   
-#   iucn_range <- vect(paste0(iucdir, "/data_0.shp"))
-#   
-#   iucn_compare$species <- sp
-#   
-#   
-#   
-#   
-#   # Get mode of life
-#   mode_life <- get_hab_info(sp)
-#   
-#   if (mode_life == "NOT_FOUND" | mode_life == "pelagic" | mode_life == "pelagic_surface") {
-#     depth_env <- "surf"
-#   }
-#   if (mode_life == "pelagic_mean") {
-#     depth_env <- "mean"
-#   }
-#   if (mode_life == "benthic" | mode_life == "demersal" | mode_life == "pelagic_bottom") {
-#     depth_env <- "max"
-#   }
-#   
-#   # Load list of environmental variables ----
-#   env_vars <- c("thetao-mean", "so-mean", "po4-mean", "phyc-mean", "sws-max")
-#   
-#   curr <- load_env(env_vars, depth = depth_env, terrain_vars = "bathymetry_mean")
-#   
-#   # Load study area shapefile
-#   # starea <- vect("data/shapefiles/mpa_europe_starea_v2.shp")
-#   exp_starea <-  ext(-41, 47, 20, 89) # ext(starea) +- 5 degrees
-#   
-#   # Crop to the expanded area (only the one that will be used for
-#   # sampling the background)
-#   
-#   # Remove Red sea
-#   mregions <- mregions::mr_shp("MarineRegions:iho")
-#   mregions <- mregions[mregions$name %in% c("Red Sea", "Gulf of Aqaba", "Gulf of Suez"),]
-#   
-#   curr <- mask(crop(curr, exp_starea), mregions, inverse = T)
-#   
-#   # See all available files
-#   sp_files <- list.files(paste0("data/species/key=", sp),
-#                          recursive = T, full.names = T)
-#   
-#   # Get the most recent one
-#   dates <- stringr::str_extract(sp_files, "date=[:digit:]*[:digit:]")
-#   dates <- lubridate::as_date(gsub("date=", "", dates), format = "%Y%m%d")
-#   sel_date <- min(dates)
-#   
-#   sp_files <- sp_files[grepl(format(sel_date, "%Y%m%d"), sp_files)]
-#   
-#   # Open file
-#   #pts <- read_parquet()
-#   
-#   #### TEMP
-#   pts <- lapply(sp_files, function(x){
-#     file <- read_parquet(x)
-#     file[,c("decimalLongitude", "decimalLatitude")]
-#   })
-#   pts <- do.call("rbind", pts)
-#   
-#   # get 1 point per cell
-#   base <- curr[[1]]
-#   base[] <- NA
-#   base[cellFromXY(base, as.data.frame(pts))] <- 1
-#   base <- mask(base, curr[[1]])
-#   
-#   pts_full <- as.data.frame(base, xy = T)[,1:2]
-#   colnames(pts_full) <- c("decimalLongitude", "decimalLatitude")
-#   ####
-#   
-#   depth_sp <- extract(curr$bathymetry_mean, pts_full[,1:2], ID = F)[,1]
-#   depth_lim <- ceiling(min(depth_sp) - 500)
-#   
-#   # Mask to depth
-#   bath_mask <- curr$bathymetry_mean
-#   bath_mask[bath_mask < depth_lim] <- NA
-#   
-#   curr <- mask(curr, bath_mask)
-#   
-#   #### TEMP
-#   pts <- lapply(sp_files, function(x){
-#     file <- read_parquet(x)
-#     file[,c("decimalLongitude", "decimalLatitude")]
-#   })
-#   pts <- do.call("rbind", pts)
-#   
-#   # get 1 point per cell
-#   base <- curr[[1]]
-#   base <- terra::aggregate(base, fact = 2)
-#   base[] <- NA
-#   base[cellFromXY(base, as.data.frame(pts))] <- 1
-#   base <- mask(base, terra::aggregate(curr[[1]], fact = 2))
-#   
-#   pts_agg <- as.data.frame(base, xy = T)[,1:2]
-#   colnames(pts_agg) <- c("decimalLongitude", "decimalLatitude")
-#   ####
-#   
-#   back <- spatSample(curr[[1]], 1000, xy = T, na.rm = T)[,1:2]
-#   colnames(back) <- c("decimalLongitude", "decimalLatitude")
-#   
-#   pts_agg <- rbind(cbind(pts_agg, presence = 1), cbind(back, presence = 0))
-#   pts_full <- rbind(cbind(pts_full, presence = 1), cbind(back, presence = 0))
-#   
-#   
-#   iucn_rast <- curr[[1]]
-#   
-#   iucn_rast[] <- 1
-#   
-#   iucn_rast <- mask(iucn_rast, crop(iucn_range, iucn_rast), updatevalue = 0)
-#   iucn_rast <- mask(iucn_rast, curr[[1]])
-#   
-#   for (z in 1:nrow(iucn_compare)) {
-#     pred <- rast(paste0("results/species_test/", sp, "/sp", sp, "_", iucn_compare$model[z], "_current.tif"))
-#     pred <- (pred - global(pred, min, na.rm = T)[,1]) / 
-#       (global(pred, max, na.rm = T)[,1] - global(pred, min, na.rm = T)[,1])
-#     
-#     if (grepl("areso", iucn_compare$model[z])) {
-#       pred_pts <- extract(pred, pts_agg[,1:2], ID = F)[,1]
-#       obs <- pts_agg$presence
-#     } else {
-#       pred_pts <- extract(pred, pts_full[,1:2], ID = F)[,1]
-#       obs <- pts_full$presence
-#     }
-#     
-#     th <- modEvA::getThreshold(obs = obs, pred = pred_pts,
-#                                threshMethod = "MTP", quant = 0.1)
-#     
-#     pred_bin <- pred
-#     pred_bin[pred_bin < th] <- 0
-#     pred_bin[pred_bin >= th] <- 1
-#     
-#     jacc <- function(rast1, rast2) {
-#       comb <- rast1 + rast2
-#       inter <- comb
-#       union <- comb
-#       inter[] <- ifelse(union[] >= 2, 1, 0)
-#       union[] <- ifelse(comb[] >= 1, 1, 0)
-#       
-#       cinter <- freq(inter)
-#       cunion <- freq(union)
-#       
-#       return((cinter$count[cinter$value == 1] / cunion$count[cunion$value == 1]))
-#     }
-#     
-#     iucn_compare$jacc[z] <- jacc(pred_bin, iucn_rast)
-#     
-#     writeRaster(pred_bin, 
-#                 paste0("results/species_test/", sp, "/sp", sp, "_", iucn_compare$model[z], "_binp10_current.tif"),
-#                 overwrite = T)
-#     
-#   }
-#   
-#   if (sp == species_list[1]) {
-#     iucn_allsp <- iucn_compare
-#   } else {
-#     iucn_allsp <- rbind(iucn_allsp, iucn_compare)
-#   }
-#   
-#   iucn_compare$species <- iucn_compare$jacc <- NA
-#   
-# }
+# 
+# (p1 <- ggplot()+
+#     geom_sf(data = base, fill = "grey80", color = "grey80") +
+#     geom_sf(data = iucn, fill = "#17AB92") +
+#     coord_sf(xlim = c(-34, 41), ylim = c(24.5, 84.5)) +
+#     geom_point(data = as.data.frame(pts_full), aes(x = decimalLongitude, y = decimalLatitude),
+#                size = .5) +
+#     #scale_fill_distiller("", direction = 1) +
+#     xlab(NULL) + ylab(NULL) +
+#     theme_light() +
+#     ggtitle(expression(paste(italic("Pagrus pagrus"), " IUCN range map")),
+#             "Points are the occurrence records used for modeling.")+
+#     theme(panel.border = element_blank(),
+#           legend.position = "none",
+#           strip.background = element_blank(),
+#           strip.text = element_text(color = "grey10"),
+#           text = element_text(size = 6)))
+# 
+# (p2 <- ggplot()+
+#   geom_sf(data = base, fill = "grey80", color = "grey80") +
+#   geom_raster(data = pred_lasso, aes(x = x, y = y, fill = values)) +
+#   coord_sf(xlim = c(-34, 41), ylim = c(24.5, 84.5)) +
+#   scale_fill_distiller("", direction = 1) +
+#   xlab(NULL) + ylab(NULL) +
+#   theme_light() +
+#   ggtitle("LASSO") +
+#   theme(panel.border = element_blank(),
+#         legend.position = "none",
+#         strip.background = element_blank(),
+#         strip.text = element_text(color = "grey10"),
+#         text = element_text(size = 6)))
+# 
+# (p3 <- ggplot()+
+#     geom_sf(data = base, fill = "grey80", color = "grey80") +
+#     geom_raster(data = pred_rf, aes(x = x, y = y, fill = values)) +
+#     coord_sf(xlim = c(-34, 41), ylim = c(24.5, 84.5)) +
+#     scale_fill_distiller("", direction = 1) +
+#     xlab(NULL) + ylab(NULL) +
+#     theme_light() +
+#     ggtitle("RF down-sampled") +
+#     theme(panel.border = element_blank(),
+#           legend.position = "none",
+#           strip.background = element_blank(),
+#           strip.text = element_text(color = "grey10"),
+#           text = element_text(size = 6)))
+# 
+# library(patchwork)
+# 
+# p1 + p2 + p3
+# 
+# ggsave("map_pagrus.png", width = 1280*2, height = 720*2, unit = "px")

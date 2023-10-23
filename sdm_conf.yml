@@ -1,0 +1,100 @@
+# Project title: MPA Europe - Species Distribution Modeling (OBIS contribution)
+# Authors: Silas Principe (s.principe@unesco.org), Pieter Provoost
+#
+# This is a configuration file for the SDMs. It's used to configure (1) the groups
+# for which to obtain the SDMs and (2) the variables to use when fitting the SDMs
+# YAML files use the identation to establish list levels, so it's important to keep it consistent
+# Don't use tabulation, use 2 spaces instead.
+#
+# File version: 1 (2023-10-11)
+---
+# Fill here with the conditions to get the groups.
+# For example, the group photosynthesizers have to met the condition
+# kingdom == 'Chromista' | kingdom == 'Plantae'
+# For character, use single ''
+groups:
+  fishes: class == 'Elasmobranchii' | class == 'Teleostei'
+  photosynthesizers: kingdom == 'Chromista' | kingdom == 'Plantae'
+  others: kingdom != 'Chromista' & kingdom != 'Plantae' & class != 'Aves' & class != 'Elasmobranchii' & class != 'Teleostei'
+  seabirds: class == 'Aves'
+# Put here the list of variables that will be used for each group
+# The order is variables (don't edit) > group name (should be equal to the previous section) > 'hypothesis' > list of variables
+# setting an hypothesis ("name of hypothesis") is useful if you want to test multiple variables settings
+# If you want to use a single hypothesis, simple leave only one hypothesis.
+# Names of variable should be written on the format NAME_VARIANT(e.g. mean, min, max)
+# So, for example, to get the mean temperature for the sea we would set: thetao_mean
+# Example:
+# variables:
+#  fishes:
+#    hypothesis1:
+#      - variable1_mean
+#      - variable2_max
+#    hypothesis2:
+#      - variable2_max
+#      - variable3_min
+variables:
+  fishes:
+    basevars:
+      - thetao_mean
+      - thetao_range
+      - so_mean
+      - siconc_max # surface only
+      - chl_mean
+      #- o2_mean # removed after VIF
+      - sws_max
+      - bathymetry
+      #-distcoast
+  photosynthesizers:
+    basevars:
+      - thetao_max
+      - so_mean
+      - siconc_max # surface only
+      - kdpar_mean 
+      #- par_mean # Temporalily removed because there are problems with the file on BO
+      - dfe_mean
+      - no3_mean
+      - po4_mean
+      - bathymetry
+      #- distcoast
+  others:
+    basevars:
+      - thetao_max
+      - so_mean
+      - ph_mean
+      - siconc_max # surface only
+      - chl_mean
+      #- o2_mean # removed after VIF
+      - no3_mean
+      - kdpar_mean 
+      - sws_max
+      - bathymetry
+      #-distcoast
+  seabirds:
+    basevars:
+      - tas_mean
+      - siconc_mean # surface only
+      - phyc_mean
+      #- par_mean # Temporalily removed because there are problems with the file on BO
+      - dfe_mean
+      - no3_mean
+      - po4_mean
+      #-distcoast
+# Cross-validation block sizes
+# Block size assessed using the package blockCV
+# See the code get_block_size.R for more info
+blocksizes:
+  depthsurf:
+    fishes: 2160.94
+    photosynthesizers: 3655.58
+    others: 3086.8
+    seabirds: 3703.82
+  depthmean:
+    fishes: 2213.16
+    photosynthesizers: 4901.08
+    others: 2341.01
+    seabirds: 4872.68
+  depthmax:
+    fishes: 1975.08
+    photosynthesizers: 6179.94
+    others: 2362.84
+    seabirds: 3302.59
