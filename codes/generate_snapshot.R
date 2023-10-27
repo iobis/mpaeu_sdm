@@ -49,4 +49,16 @@ if (length(list.files("snapshot")) > 0) {
   file.remove(list.files("snapshot", full.names = T))
 }
 write_parquet(final, paste0("snapshot/std_records_", format(Sys.Date(), "%Y%m%d"), ".parquet"))
+
+# Save also final species list file
+sp_list <- final %>%
+  distinct(taxonID)
+
+# Load other information about species
+full_info <- read.csv("data/all_splist_20231017.csv")
+colnames(full_info)[1] <- "taxonID"
+
+sp_list <- left_join(sp_list, full_info)
+
+write_parquet(sp_list, paste0("snapshot/std_splist_", format(Sys.Date(), "%Y%m%d"), ".parquet"))
               
