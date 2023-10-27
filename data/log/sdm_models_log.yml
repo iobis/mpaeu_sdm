@@ -1,0 +1,21 @@
+# LOG FILE FOR SDM MODELING - MPA EUROPE #
+##########################################
+mv1_pr:
+  date_first_run: 2023-10-19
+  minimum_pts: 30
+  tried_eval_iflown: TRUE
+  behavior_with_higheval: ifhelps
+  help_perc: 0.25
+  standard_habitat: depthsurf
+  try_other_blocks: TRUE
+  min_size_block: 0.2
+  max_size_block: 20
+  clean_sac: 0.2
+  max_dist_sac: 50
+  hypothesis_tested: basevars
+  future_scenarios: ssp126;ssp245;ssp370;ssp460;ssp585
+  future_periods: dec50;dec100
+  clip_area: -41;47;20;89
+  limited_depth: TRUE
+  variables_scaled: FALSE
+  species:

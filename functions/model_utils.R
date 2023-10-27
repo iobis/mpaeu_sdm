@@ -104,9 +104,15 @@ log_addsp <- function(log_file, sp, redo = FALSE) {
 }
 
 log_addmodel <- function(log_file, model_name, model, sp_data, sp_max_depth,
-                         tune_method, block_size) {
+                         tune_method, block_size, clean_up_mode = TRUE) {
   
   prev <- readLines(log_file, warn = F)
+  
+  if (clean_up_mode) {
+    if (any(grepl(model_name, prev))) {
+      prev <- prev[-grep(model_name, prev):-(grep(model_name, prev)+9)]
+    }
+  }
   
   to_write <- c(
     prev,

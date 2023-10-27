@@ -6,7 +6,7 @@ library(robis)
 library(tidyverse)
 
 # Load species list
-gbif_list <- read.csv("data/gbif_splist_20230720.csv")
+gbif_list <- read.csv("data/gbif_splist_20231023.csv") # Most recent, with improvement on code
 obis_list <- read.csv("data/obis_splist_20230720.csv")
 
 # Ensure that just the same kingdoms are being considered
@@ -15,9 +15,16 @@ gbif_list <- gbif_list[!duplicated(gbif_list$gbif_speciesKey),]
 
 # See what is not on OBIS
 not_obis <- gbif_list[!gbif_list$valid_AphiaID %in% obis_list$taxonID,]
+nrow(not_obis)
+# See what is not on GBIF
+not_gbif <- obis_list[!obis_list$taxonID %in% gbif_list$valid_AphiaID,] 
+nrow(not_gbif)
+# See what is shared
+both_lists <- obis_list[obis_list$taxonID %in% gbif_list$valid_AphiaID,]
+nrow(both_lists)
 
 
-# Get the counts of points in GBIF to assess rarity
+# Get the counts of points in GBIF globally to assess rarity
 breaks <- seq(1, nrow(not_obis), by = 5)[-1]
 breaks[length(breaks)] <- nrow(not_obis)
 
@@ -42,12 +49,11 @@ counts_full$gbif_speciesKey <- as.integer(counts_full$gbif_speciesKey)
 
 not_obis <- left_join(not_obis, counts_full)
 
-# For now ignore those with NA - synonims, but to check what happens
+# For now ignore those with NA - synonims for GBIF, but not for worms...
 not_obis <- not_obis[!is.na(not_obis$records_glob_gbif),]
 
-# Get number of records on OBIS
-counts_obis <- checklist(taxonid = not_obis$valid_AphiaID)
-# Get the counts of points in OBIS
+
+# Get the counts of points in OBIS globally
 breaks <- seq(1, nrow(not_obis), by = 100)[-1]
 breaks[length(breaks)] <- nrow(not_obis)
 
@@ -69,20 +75,40 @@ colnames(counts_obis) <- c("valid_AphiaID", "records_glob_obis")
 
 not_obis <- left_join(not_obis, counts_obis)
 
-not_obis %>%
+
+# We can then see which records are missing on OBIS just in Europe or globally
+# as well as seeing which species are also rare on GBIF.
+not_obis_summary <- not_obis %>%
   mutate(records_glob_obis = ifelse(is.na(records_glob_obis), 0, records_glob_obis)) %>%
   summarise(rare_gbif = sum(records_glob_gbif <= 10),
             on_obis = sum(records_glob_obis > 0),
             not_on_obis = sum(records_glob_obis == 0),
             on_obis_but_rare = sum(records_glob_obis > 0 & records_glob_obis <= 10))
 
+not_obis_summary
 
-not_obis %>%
+not_obis_phylum <- not_obis %>%
   mutate(records_glob_obis = ifelse(is.na(records_glob_obis), 0, records_glob_obis)) %>%
   filter(records_glob_obis == 0) %>%
   group_by(phylum) %>%
   count()
 
+not_obis_phylum <- bind_rows(not_obis_phylum,
+                             data.frame(
+                               phylum = "Others",
+                               n = sum(not_obis_phylum$n[not_obis_phylum$n < 2])
+                             ))
+not_obis_phylum <- not_obis_phylum %>% filter(n >= 2)
+
+
+
+ggplot(not_obis_phylum) +
+  geom_bar(aes(x = reorder(phylum, -n), y = n), stat = "identity", fill = "#006dd7") +
+  xlab("Phylum") + ylab("Number of species missing on OBIS") +
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 90),
+        panel.grid.major.x = element_blank())
+ggsave("records_by_phylum.png", width = 8, height = 6)
 
 
 #### Europe count
@@ -111,7 +137,7 @@ for (i in breaks) {
   
 }
 
-colnames(counts_full) <- c("gbif_speciesKey", "records_glob_gbif")
+colnames(counts_full) <- c("gbif_speciesKey", "records_europe_simp_gbif")
 counts_full$gbif_speciesKey <- as.integer(counts_full$gbif_speciesKey)
 
 not_obis <- left_join(not_obis, counts_full)

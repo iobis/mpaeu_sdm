@@ -52,9 +52,8 @@ rsconnect/
 data/raw/
 data/species/
 data/env/
-data/shapefiles/
 data/distances/
-data/log/
+data/log/_log*
 data/iucn/
 data/virtual_species/
 data/virtual_species_oldversion/
@@ -66,3 +65,4 @@ storr/
 datastd/
 results/
 temp_files/
+codes/drafts/*
