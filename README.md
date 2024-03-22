@@ -3,11 +3,11 @@ Habitat range maps for European marine species
 
 ## About the project
 
-This project is under development. For now, only the codes to obtain the
-list of species occurring in the study area, and the codes for
-downloading the data from OBIS/GBIF are available.
 
-Note that due to limits of file size, the raw data is not uploaded.
+
+NOTE: This project is still under development. 
+
+Due to limits of file size, the raw data is not uploaded. However, you can obtain all data using the codes named `pre_download_*.R`
 
 ## Directory structure
 
@@ -40,7 +40,11 @@ Note that due to limits of file size, the raw data is not uploaded.
     │
     └── src                    : Repository website source
 
-## What are the codes for?
+## Main codes
+
+Most of the components of the SDM framework are provided through the [`obissdm` package](https://github.com/iobis/mpaeu_msdm). The codes and functions of this repository only _operationalize_ the modelling.
+
+### Codes (in order of execution)
 
 - check\_\*: check species occurring in an area, etc.
 - get\_\*: obtain data for something.
@@ -48,3 +52,13 @@ Note that due to limits of file size, the raw data is not uploaded.
 - model\_\*: modeling the species’ distribution.
 - predict\_\*: make predictions.
 - plot\_\*: plotting.
+
+### Functions
+
+## Basic components
+
+## Running models for the full list of species
+
+```
+Rscript source_run.R
+```
