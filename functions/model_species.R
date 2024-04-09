@@ -115,6 +115,15 @@ model_species <- function(species,
       filter(taxonID == species) %>%
       collect()
     
+    if (nrow(eco_info) < 1) {
+      eco_info <- obissdm::mp_get_ecoinfo(
+        species_list = species,
+        outfile = NULL,
+        return_table = TRUE,
+        show_progress = FALSE
+      )
+    }
+    
     # Select ecological information for the species
     hab <- eco_info$mode_life
     hab_depth <- hab_to_depth(hab)
@@ -405,14 +414,22 @@ model_species <- function(species,
       
       # Get what models are above threshold
       good_models <- lapply(model_fits, function(model){
-        cv_res <- model$cv_metrics
-        cv_res <- apply(cv_res, 2, mean, na.rm = T)
-        the_metric <- cv_res[[tg_metrics]]
-        if (the_metric >= tg_threshold) {
-          if (sum(is.na(model$cv_metrics[[tg_metrics]])) >= 4) {
-            return(FALSE)
+        if (!is.null(model)) {
+          cv_res <- model$cv_metrics
+          cv_res <- apply(cv_res, 2, mean, na.rm = T)
+          the_metric <- cv_res[[tg_metrics]]
+          if (!is.na(the_metric)) {
+            if (the_metric >= tg_threshold) {
+              if (sum(is.na(model$cv_metrics[[tg_metrics]])) >= 4) {
+                return(FALSE)
+              } else {
+                return(TRUE)
+              }
+            } else {
+              return(FALSE)
+            }
           } else {
-            return(TRUE)
+            return(FALSE)
           }
         } else {
           return(FALSE)
@@ -438,9 +455,9 @@ model_species <- function(species,
           if (!file.exists(gsub("mess", "mess_cog", outmess))) {do_mess <- TRUE} else {do_mess <- FALSE} 
           
           scenarios <- data.frame(
-            scenario = c("current", rep(c("ssp1", "ssp2", "ssp3", "ssp4", "ssp5"),
+            scenario = c("current", rep(c("ssp116", "ssp245", "ssp370", "ssp460", "ssp585"),
                                         each = 2)),
-            year = c(NA, rep(c(2050, 2100), 5))
+            year = c(NA, rep(c("dec50", "dec100"), 5))
           )
           
           for (k in 1:nrow(scenarios)) {
@@ -474,7 +491,7 @@ model_species <- function(species,
                                   ifelse(maxpt > 10000, 10000, maxpt))
               }
               mess_map <- ecospat::ecospat.mess(
-                as.data.frame(env_to_pred, xy = T)[to_mess,], 
+                na.omit(as.data.frame(env_to_pred, xy = T)[to_mess,]), 
                 cbind(sp_data$coord_training, sp_data$training[,2:ncol(sp_data$training)]))
               mess_map_t <- env_to_pred[[1]]
               mess_map_t[] <- NA
@@ -580,6 +597,8 @@ model_species <- function(species,
           writeRaster(c(ensemble, ensemble_cv), outens,
                       #wopt=list(verbose=TRUE),
                       overwrite = T)
+          
+          model_predictions <- c(model_predictions, ensemble[[1]])
           
           res_ens <- cogeo_optim(outens)
           
@@ -687,6 +706,8 @@ model_species <- function(species,
         thresh_maxss <- bind_rows(thresh_maxss, .id = "model")
         
         thresh <- left_join(thresh_p10_mtp, thresh_maxss, by = "model")
+        
+        outpath <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/metrics/")
         write_parquet(thresh, paste0(outpath,
                                      "taxonid=", species, "_model=", outacro,
                                      "_what=thresholds.parquet"))
@@ -905,6 +926,12 @@ model_species <- function(species,
           return(invisible(NULL))
           
         })
+        
+        # Save fit points
+        write_parquet(sp_data$coord_training[sp_data$training$presence == 1,],
+                      paste0(outfolder, "/taxonid=", species, "/model=", outacro,
+                             "/taxonid=", species, "_model=", outacro, "_",
+                             "what=fitocc.parquet"))
         
         
         # Save log and return object

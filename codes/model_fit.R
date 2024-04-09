@@ -52,7 +52,7 @@ sel_species <- check_exists("sel_species", "all")
 # The path for the species data dataset
 species_dataset <- "data/species/"
 # The path for the species list
-species_list <- "data/all_splist_20240319.csv"
+species_list <- "analysis/wwf_2024/wwf_list.csv"#"data/all_splist_20240319.csv"
 # Run in parallel? For avoiding parallel, change both to FALSE
 run_parallel <- ifelse(length(sel_species) > 1 | sel_species == "all", TRUE, FALSE)[1]
 # Number of cores for parallel processing
@@ -95,7 +95,7 @@ cli::cat_rule()
 cli::cat_line(cli::col_cyan("MPA EUROPE PROJECT - WP3 Species and biogenic habitat distributions"))
 cli::cat_line("Run species distribution models for multiple species in parallel")
 cli::cat_line()
-cli::cli_inform("Running SDM for {length(species_list)} species")
+cli::cli_inform("Running SDM for {nrow(species_list)} species")
 cli::cli_inform("Chosen algorithm{?s}: {.val {algos}}")
 if (!limit_by_depth) {
   cli::cli_inform(c("x" = "Not limiting by depth"))
@@ -126,7 +126,8 @@ pmod <- function(sp, gp, sdat, outf, outac, alg, lmd, lmd_buf, assb, corb, p) {
   p()
   
   if (st$exists(sp)) {
-    if (st$get(as.character(sp)) %in% c("done", "succeeded")) {
+    if (st$get(as.character(sp))[[1]] %in% c("done", "succeeded", "low_data",
+                                             "failed", "no_good_model")) {
       to_do <- FALSE
     } else {
       to_do <- TRUE
@@ -136,6 +137,8 @@ pmod <- function(sp, gp, sdat, outf, outac, alg, lmd, lmd_buf, assb, corb, p) {
   }
   
   if (to_do) {
+    st$set(sp, "running")
+    
     fit_result <- try(model_species(species = sp,
                                     group = gp,
                                     species_dataset = sdat,
@@ -151,7 +154,8 @@ pmod <- function(sp, gp, sdat, outf, outac, alg, lmd, lmd_buf, assb, corb, p) {
     if (!inherits(fit_result, "try-error")) {
       st$set(sp, fit_result)
     } else {
-      st$set(sp, "failed")
+      st$set(sp, list(status = "failed",
+                      error = fit_result))
     }
   }
   
