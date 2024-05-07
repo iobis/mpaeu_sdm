@@ -62,6 +62,7 @@ codes/drafts/
 suppinfo/
 /snapshot
 snapshot/
+analysis/internal_eval_2024
 
 # Large/temporary files
 *_storr/

@@ -9,7 +9,6 @@
 # Loading main data ----
 .cm_load_species <- function(species, species_dataset) {
   # Load species data
-  if (verbose) cli::cli_alert_info("Reading data")
   if (tools::file_ext(species_dataset) == "parquet") {
     if (utils::file_test("-d", species_dataset)) {
       ds <- pl$scan_parquet(file.path(species_dataset, "**/*"))
@@ -35,8 +34,8 @@
   return(species_data)
 }
 
-
-.cm_check_coastal <- function(species_data, env) {
+# Check coastal ----
+.cm_check_coastal <- function(species_data, env, coord_names, verbose) {
   
   if ("coastal" %in% names(env$hypothesis)) {
     # Test if is within europe/coastal
@@ -69,8 +68,84 @@
   return(env)
 }
 
+# Check ecoregions ----
+.cm_check_ecoregions <- function(ecoregions, fit_pts, eval_pts,
+                                 env, limit_by_depth, depth_buffer) {
+  
+  # Check which eco-regions are covered by the points
+  ecoreg_unique <- ecoregions$Realm[is.related(ecoregions,
+                                               vect(bind_rows(fit_pts, eval_pts), 
+                                                    geom = coord_names), 
+                                               "intersects")]
+  
+  model_log$model_details$ecoregions <- ecoreg_unique
+  ecoreg_occ <- ecoregions[ecoregions$Realm %in% ecoreg_unique,]
+  
+  # Apply a buffer to ensure that all areas are covered
+  sf::sf_use_s2(FALSE)
+  ecoreg_occ_buff <- suppressMessages(
+    suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(ecoreg_occ), 0.2)))
+  )
+  
+  adj_ecoreg <- ecoregions$Realm[is.related(ecoregions, ecoreg_occ_buff,
+                                            "intersects")]
+  
+  # Mask areas
+  ecoreg_sel <- ecoregions[ecoregions$Realm %in% unique(
+    c(ecoreg_unique, adj_ecoreg)
+  ),]
+  model_log$model_details$ecoregions_included <- unique(ecoreg_sel$Realm)
+  
+  # Apply a buffer to ensure that all areas are covered
+  sf::sf_use_s2(FALSE)
+  ecoreg_sel <- suppressMessages(
+    suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(ecoreg_sel), 0.5)))
+  )
+  
+  # Limit to max extension based on distance to the points
+  max_ext <- ext(vect(rbind(fit_pts, eval_pts), geom = coord_names))
+  max_ext <- ext(as.vector(max_ext) + c(-20, 20, -20, 20))
+  ecoreg_sel <- crop(ecoreg_sel, max_ext)
+  
+  # Limit by depth if TRUE
+  if (limit_by_depth) {
+    if (verbose) cli::cli_alert_info("Limiting by depth")
+    # To decide if this step will be kept:
+    # Load bathymetry layer
+    bath <- rast("data/env/terrain/bathymetry_mean.tif")
+    bath <- mask(crop(bath, ecoreg_sel), ecoreg_sel)
+    
+    bath_pts <- terra::extract(bath, bind_rows(fit_pts, eval_pts))
+    
+    bath_range <- range(bath_pts[,2])
+    bath_range[1] <- bath_range[1] - depth_buffer
+    bath_range[2] <- ifelse((bath_range[2] + depth_buffer) > 0, 
+                            0, bath_range[2] + depth_buffer)
+    
+    bath[bath < bath_range[1] | bath > bath_range[2]] <- NA
+    
+    if ("coastal" %in% names(env$hypothesis)) {
+      bath <- crop(bath, europe_starea)
+      env$layers <- mask(crop(env$layers, ecoreg_sel), bath)
+      env$layers <- mask(env$layers, env$layers$wavefetch)
+    } else {
+      env$layers <- mask(crop(env$layers, ecoreg_sel), bath)
+    }
+    
+  } else {
+    if ("coastal" %in% names(env$hypothesis)) {
+      ecoreg_sel <- crop(ecoreg_sel, europe_starea)
+      env$layers <- mask(env$layers, ecoreg_sel)
+    } else {
+      env$layers <- mask(env$layers, ecoreg_sel)
+    }
+  }
+  
+  return(env)
+}
 
-.cm_prepare_data_obj <- function(fit_pts, env, verbose = FALSE) {
+# Prepare data object ----
+.cm_prepare_data_obj <- function(fit_pts, eval_pts, env, verbose = FALSE) {
   # Assess SAC
   fit_pts_sac <- try(obissdm::outqc_sac(fit_pts, 
                                         env_layers = subset(env$layers, env$hypothesis[[1]]),
@@ -107,7 +182,7 @@
 }
 
 
-
+# Assess bias (TODO) ----
 .cm_bias_assess <- function(sp_data, env) {
   
   # Add some way of assessing spatial bias
@@ -155,34 +230,48 @@
   
 }
 
+# Check good models ----
+.cm_check_good_models <- function(model_fits, tg_metrics = "cbi", tg_threshold = 0.3) {
+  
+  # Get what models are above threshold
+  good_models <- lapply(model_fits, function(model){
+    if (!is.null(model)) {
+      cv_res <- model$cv_metrics
+      cv_res <- apply(cv_res, 2, mean, na.rm = T)
+      the_metric <- cv_res[[tg_metrics]]
+      if (!is.na(the_metric)) {
+        if (the_metric >= tg_threshold) {
+          if (sum(is.na(model$cv_metrics[[tg_metrics]])) >= 4) {
+            return(FALSE)
+          } else {
+            return(TRUE)
+          }
+        } else {
+          return(FALSE)
+        }
+      } else {
+        return(FALSE)
+      }
+    } else {
+      return(FALSE)
+    }
+  })
+  
+  good_models <- which(unlist(good_models))
+  
+  return(good_models)
+}
 
-
-# .cm_fit_models <- function(sp_data, algorithms) {
-#   
-#   model_fits <- list()
-#   for (i in 1:length(algorithms)) {
-#     if (verbose) cli::cli_alert_info("Fitting {algorithms[i]}")
-#     model_fits[[i]] <- try(do.call(paste0("sdm_module_", algorithms[i]), list(sp_data, verbose = verbose)))
-#     if (inherits(model_fits[[i]], "try-error")) {
-#       model_log$model_result[[algorithms[i]]] <- "failed"
-#       model_fits[[i]] <- NULL
-#     } else {
-#       model_log$model_result[[algorithms[i]]] <- "succeeded"
-#     }
-#   }
-#   
-#   return(model_fits)
-# }
-
-
-
-.cm_predict_models <- function() {
+# Predict models ----
+.cm_predict_models <- function(good_models, model_fits, best_hyp, hab_depth,
+                               outfolder, species, outacro,
+                               verbose) {
   
   # Predict models
   model_predictions <- lapply(good_models, function(id) {
     model_name <- model_fits[[id]]$name
     
-    best_hyp <- multi_mod_max$best_model
+    #best_hyp <- multi_mod_max$best_model
     
     outpath <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/predictions/")
     
@@ -193,9 +282,9 @@
     if (!file.exists(gsub("mess", "mess_cog", outmess))) {do_mess <- TRUE} else {do_mess <- FALSE} 
     
     scenarios <- data.frame(
-      scenario = c("current", rep(c("ssp1", "ssp2", "ssp3", "ssp4", "ssp5"),
+      scenario = c("current", rep(c("ssp116", "ssp245", "ssp370", "ssp460", "ssp585"),
                                   each = 2)),
-      year = c(NA, rep(c(2050, 2100), 5))
+      year = c(NA, rep(c("dec50", "dec100"), 5))
     )
     
     for (k in 1:nrow(scenarios)) {
@@ -229,7 +318,7 @@
                             ifelse(maxpt > 10000, 10000, maxpt))
         }
         mess_map <- ecospat::ecospat.mess(
-          as.data.frame(env_to_pred, xy = T)[to_mess,], 
+          na.omit(as.data.frame(env_to_pred, xy = T)[to_mess,]), 
           cbind(sp_data$coord_training, sp_data$training[,2:ncol(sp_data$training)]))
         mess_map_t <- env_to_pred[[1]]
         mess_map_t[] <- NA
