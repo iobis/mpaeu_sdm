@@ -4,13 +4,13 @@
 hab_to_depth <- function(hab, default = "depthsurf") {
   
   if (grepl("benthic|demersal|bottom", hab)) {
-    dstrata <- "depthmax"
+    dstrata <- "depthmean"
   } else if (grepl("pelagic_surface", hab)) {
     dstrata <- "depthsurf"
   } else if (grepl("NOT_FOUND", hab)) {
     dstrata <- default
   } else {
-    dstrata <- "depthmean"
+    dstrata <- "depthsurf"
   }
   
   return(dstrata)

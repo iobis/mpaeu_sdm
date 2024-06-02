@@ -9,151 +9,118 @@
 # Load packages ----
 library(obissdm)
 library(terra)
-library(raster) # needed because virtualspecies package is still using raster
 source("functions/load_env.R")
 set.seed(2023)
 
 
 
 # List and load environmental layers ----
-env_vars <- c("thetao-mean", "so-mean", "po4-mean", "phyc-mean")
+env_vars <- c("thetao-mean", "sws-mean", "so-mean", "o2-mean")
 
-curr <- load_env(env_vars, terrain_vars = "bathymetry_mean")
-ssp1 <- load_env(env_vars, scenario = "ssp126", terrain_vars = "bathymetry_mean")
-ssp5 <- load_env(env_vars, scenario = "ssp585", terrain_vars = "bathymetry_mean")
+curr <- load_env(env_vars, terrain_vars = c("bathymetry_mean", "distcoast"))
+ssp1 <- load_env(env_vars, scenario = "ssp126", terrain_vars = c("bathymetry_mean", "distcoast"))
+ssp5 <- load_env(env_vars, scenario = "ssp585", terrain_vars = c("bathymetry_mean", "distcoast"))
 
 # Load study area shapefile
-starea <- shapefile("data/shapefiles/mpa_europe_starea_v2.shp")
-exp_starea <- shapefile("data/shapefiles/mpa_europe_extarea_allatl_v2.shp")
+starea <- vect("data/shapefiles/mpa_europe_starea_v2.shp")
+exp_starea <- vect("data/shapefiles/mpa_europe_extarea_allatl_v2.shp")
 
-# Crop to the expanded area
-curr <- crop(curr, exp_starea)
-ssp1 <- crop(ssp1, exp_starea)
-ssp5 <- crop(ssp5, exp_starea)
-
-# Remove Pacific and Indian ocean
-mregions <- mregions::mr_shp("MarineRegions:iho")
-mregions <- mregions[mregions$name %in% 
-                       c("South Pacific Ocean", "North Pacific Ocean",
-                         "Indian Ocean", "Mozambique Channel", "Red Sea"),]
-
-curr <- mask(curr, mregions, inverse = T)
-ssp1 <- mask(ssp1, mregions, inverse = T)
-ssp5 <- mask(ssp5, mregions, inverse = T)
+# # Crop to the expanded area
+# sampling_area <- crop(curr[[1]], exp_starea)
+# sampling_area <- mask(sampling_area, exp_starea, inverse = F)
+# sampling_area[!is.na(sampling_area)] <- 1
+# sampling_area <- as.polygons(sampling_area)
 
 # Create a bias layer that will give higher probability of sampling in shallow areas
 bias_layer <- curr$bathymetry_mean
 bias_layer[bias_layer >= -200] <- 1
 bias_layer[bias_layer < -200] <- 0.5
-# bias_layer <- (bias_layer - global(bias_layer, min, na.rm = T)[,1]) /
-#   (global(bias_layer, max, na.rm = T)[,1] - global(bias_layer, min, na.rm = T)[,1])
-# bias_layer[bias_layer < 0.1] <- 0.1
-bias_layer <- raster(bias_layer)
 
-# Mask everything to a depth of up to 1500 m
-bath_mask <- curr$bathymetry_mean
-bath_mask[bath_mask < -1500] <- NA
-
-curr <- mask(curr, bath_mask)
-ssp1 <- mask(ssp1, bath_mask)
-ssp5 <- mask(ssp5, bath_mask)
-
+# Load Gaussian field layer
+gaus_rast <- rast("data/virtual_species/gaussian_field_layer.tif")
 
 
 # Create Virtual Species ----
 
-# VSP 1 and 2 (all variables known, broad distribution vs Europe limited)
-# Convert to raster format
-layers_1 <- stack(curr)
-layers_ssp1 <- stack(ssp1)
-layers_ssp5 <- stack(ssp5)
-future_list <- list(ssp1 = layers_ssp1,
-                    ssp5 = layers_ssp5)
+layers_1 <- curr
+layers_2 <- c(curr, gaus_rast)
 
-# Get functions
+future_list <- list(
+  ssp1 = ssp1, ssp5 = ssp5
+)
+
+future_list_2 <- list(
+  ssp1 = c(ssp1, gaus_rast), ssp5 = c(ssp5, gaus_rast)
+)
+
+# VSP 1: coastal species, all variables known
 vsp1_funs <- virtualspecies::formatFunctions(
   layers_1,
   thetao_mean = c(fun = "dnorm", mean = 12, sd = 6),
+  sws_mean = c(fun = "dnorm", mean = 0.02, sd = 0.1),
   so_mean = c(fun = "dnorm", mean = 38, sd = 8),
-  po4_mean = c(fun = "dnorm", mean = 0, sd = 0.7),
-  phyc_mean = c(fun = "dnorm", mean = 2.5, sd = 3.5),
+  o2_mean = c(fun = "dnorm", mean = 300, sd = 50),
+  coastdist = c(fun = "dnorm", mean = 0, sd = 200),
   bathymetry_mean = c(fun = "dnorm", mean = 0, sd = 400)
 )
 
+# VSP2: coastal species, not all variables known
 vsp2_funs <- virtualspecies::formatFunctions(
-  layers_1,
-  thetao_mean = c(fun = "dnorm", mean = 12, sd = 2),
-  so_mean = c(fun = "dnorm", mean = 38, sd = 6),
-  po4_mean = c(fun = "dnorm", mean = 0, sd = 0.7),
-  phyc_mean = c(fun = "dnorm", mean = 2.5, sd = 3.5),
-  bathymetry_mean = c(fun = "dnorm", mean = 0, sd = 300)
+  layers_2,
+  thetao_mean = c(fun = "dnorm", mean = 12, sd = 6),
+  sws_mean = c(fun = "dnorm", mean = 0.02, sd = 0.1),
+  so_mean = c(fun = "dnorm", mean = 38, sd = 8),
+  o2_mean = c(fun = "dnorm", mean = 300, sd = 50),
+  coastdist = c(fun = "dnorm", mean = 0, sd = 200),
+  bathymetry_mean = c(fun = "dnorm", mean = 0, sd = 400),
+  random_gauss = c(fun = "dnorm", mean = 0.5, sd = 0.2)
 )
 
 gen_vsp(layers_1, vsp1_funs, vsp_name = "Virtual species 1",
-        vsp_class = "all_var_wide_vsp", save_key = 101, plot = F,
+        vsp_class = "all_var_coastal_vsp", save_key = "1001", plot = F,
         samp_bias_layer = bias_layer, samp_constr_shape = starea,
         pred_fut = future_list)
 
-
-# VSP 2
-# Same configuration as vsp 1, but constraining to Europe
-gen_vsp(layers_1, vsp2_funs, vsp_name = "Virtual species 2",
-        vsp_class = "all_var_narrow_vsp", save_key = 102, plot = F,
+gen_vsp(layers_2, vsp2_funs, vsp_name = "Virtual species 2",
+        vsp_class = "part_var_coastal_vsp", save_key = "1002", plot = F,
         samp_bias_layer = bias_layer, samp_constr_shape = starea,
-        pred_fut = future_list)
+        pred_fut = future_list_2)
 
 
 
-# VSP 3 and 4 (unknown variable, broad distribution vs Europe limited)
-# Generate a random Gaussian field that would represent a variable that
-# is not being considered in the modeling process
-random_field <- prioritizr::simulate_species(curr$thetao_mean, n = 1, scale = 0.1)
-names(random_field) <- "gau"
 
-layers_2 <- c(curr, random_field)
-
-layers_2 <- stack(layers_2)
-
-layers_ssp1 <- stack(c(ssp1, random_field))
-layers_ssp5 <- stack(c(ssp5, random_field))
-future_list <- list(ssp1 = layers_ssp1,
-                    ssp5 = layers_ssp5)
-linfun <- function(x, a, b) {(a*x)+b}
-
-# Get functions
+# VSP 3: broad range species, all variables known
 vsp3_funs <- virtualspecies::formatFunctions(
-  layers_2,
-  thetao_mean = c(fun = "dnorm", mean = 12, sd = 6),
-  so_mean = c(fun = "dnorm", mean = 38, sd = 8),
-  po4_mean = c(fun = "dnorm", mean = 0, sd = 0.7),
-  phyc_mean = c(fun = "dnorm", mean = 2.5, sd = 3.5),
-  bathymetry_mean = c(fun = "dnorm", mean = 0, sd = 400),
-  gau = c(fun = "dnorm", mean = 1, sd = 1)
+  layers_1,
+  thetao_mean = c(fun = "dnorm", mean = 20, sd = 10),
+  sws_mean = c(fun = "dnorm", mean = 0, sd = 2),
+  so_mean = c(fun = "dnorm", mean = 30, sd = 10),
+  o2_mean = c(fun = "dnorm", mean = 300, sd = 60),
+  coastdist = c(fun = "dnorm", mean = 0, sd = 2500),
+  bathymetry_mean = c(fun = "dnorm", mean = 0, sd = 2000)
 )
 
+# VSP4: broad range species, not all variables known
 vsp4_funs <- virtualspecies::formatFunctions(
   layers_2,
-  thetao_mean = c(fun = "dnorm", mean = 12, sd = 2),
-  so_mean = c(fun = "dnorm", mean = 38, sd = 6),
-  po4_mean = c(fun = "dnorm", mean = 0, sd = 0.7),
-  phyc_mean = c(fun = "dnorm", mean = 2.5, sd = 3.5),
-  bathymetry_mean = c(fun = "dnorm", mean = 0, sd = 300),
-  gau = c(fun = "dnorm", mean = 1, sd = 1)
+  thetao_mean = c(fun = "dnorm", mean = 20, sd = 10),
+  sws_mean = c(fun = "dnorm", mean = 0, sd = 2),
+  so_mean = c(fun = "dnorm", mean = 30, sd = 10),
+  o2_mean = c(fun = "dnorm", mean = 300, sd = 60),
+  coastdist = c(fun = "dnorm", mean = 0, sd = 2500),
+  bathymetry_mean = c(fun = "dnorm", mean = 0, sd = 2000),
+  random_gauss = c(fun = "dnorm", mean = 0.5, sd = 0.2)
 )
 
-# VSP 3
-gen_vsp(layers_2, vsp3_funs, vsp_name = "Virtual species 3",
-        vsp_class = "gau_var_wide_vsp", save_key = 103, plot = F,
-        samp_bias_layer = bias_layer, samp_constr_shape = starea,
+gen_vsp(layers_1, vsp3_funs, vsp_name = "Virtual species 3",
+        vsp_class = "all_var_broad_vsp", save_key = "1003", plot = F,
+        samp_bias_layer = bias_layer, samp_constr_shape = exp_starea,
         pred_fut = future_list)
 
-
-# VSP 4
-# Same configuration as vsp 1, but constraining to Europe
 gen_vsp(layers_2, vsp4_funs, vsp_name = "Virtual species 4",
-        vsp_class = "gau_var_narrow_vsp", save_key = 104, plot = F,
-        samp_bias_layer = bias_layer, samp_constr_shape = starea,
-        pred_fut = future_list)
+        vsp_class = "part_var_broad_vsp", save_key = "1004", plot = F,
+        samp_bias_layer = bias_layer, samp_constr_shape = exp_starea,
+        pred_fut = future_list_2)
 
-# Save random field raster
-writeRaster(layers_2$gau, "data/virtual_species/gaussian_field.tif")
+
+#END

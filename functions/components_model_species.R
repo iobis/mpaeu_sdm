@@ -360,3 +360,247 @@
 .cm_get_respcurves <- function() {
   
 }
+
+# Post evaluation ----
+.cm_posteval_sst <- function(model_predictions, sdm_data,
+                             thresholds, algorithms, hab_depth,
+                             good_models, model_log) {
+  
+  temp_layer <- list.files("data/env/", recursive = T, 
+                           pattern = "thetao_baseline",
+                           full.names = T)
+  temp_layer <- temp_layer[grepl(hab_depth, temp_layer)]
+  temp_layer <- temp_layer[grepl("mean\\.tif$", temp_layer)]
+  temp_layer <- terra::rast(temp_layer)
+  
+  if (ext(temp_layer) != ext(model_predictions[[1]])) {
+    temp_layer <- terra::crop(temp_layer, model_predictions[[1]])
+    temp_layer <- terra::mask(temp_layer, model_predictions[[1]])
+  }
+  
+  data_fit <- terra::extract(temp_layer, 
+                      dplyr::bind_rows(sdm_data$coord_training,
+                                       sdm_data$coord_eval), ID = F)
+  
+  kd <- ks::kde(data_fit[,1], h = 8)
+  percentiles <- ks::qkde(c(0.01, 0.99), kd)
+  
+  masked <- temp_layer
+  masked[temp_layer >= percentiles[1] & temp_layer <= percentiles[2]] <- 3
+  masked[temp_layer < percentiles[1] | temp_layer > percentiles[2]] <- 0
+  
+  binary_maps <- lapply(1:length(model_predictions), function(x){
+    pred <- model_predictions[[x]]
+    pred[pred < thresholds[x,]$p10] <- 0
+    pred[pred > 0] <- 1
+    pred
+  })
+  
+  # plot(masked)
+  # plot(binary_maps[[1]])
+  
+  diff_maps <- lapply(binary_maps, function(x){
+    x + masked
+  })
+  
+  diff_perc <- lapply(diff_maps, function(x){
+    x[x == 0] <- NA
+    x[x == 3] <- NA
+    result <- as.data.frame(x)
+    result <- as.data.frame(table(result[,1]))
+    colnames(result) <- c("status", "frequency")
+    result$status <- ifelse(result$status == 1, "outside_tenv", "inside_tenv")
+    result$percentage <- round((result$frequency * 100) / sum(result$frequency), 2)
+    result
+  })
+  
+  trange_maps <- lapply(binary_maps, function(x){
+    x[x != 1] <- NA
+    x_pts <- as.data.frame(x, xy = T)[,1:2]
+    quantile(extract(temp_layer, x_pts, ID = F)[,1],
+             c(0.01, 0.05, 0.5, 0.95, 0.99), na.rm = T)
+  })
+  
+  for (gm in 1:length(model_predictions)) {
+    salg <- c(algorithms[good_models], "ensemble")[gm]
+    model_log$model_posteval[[salg]] <- list(
+      thermal_range = quantile(data_fit[,1], c(0.01, 0.05, 0.5, 0.95, 0.99)),
+      thermal_range_binary = trange_maps[[gm]],
+      thermal_envelope = diff_perc[[gm]]
+    )
+  }
+  
+  return(model_log)
+}
+
+.cm_posteval_hypervolume <- function(idx, var_imp, model_predictions,
+                                     env_layers, sdm_data, n_vars = 3,
+                                     return_plot = TRUE) {
+  
+  sink(nullfile())
+  require(hypervolume)
+  require(ggplot2)
+  require(patchwork)
+  
+  # Select N most important vars
+  vars <- var_imp[[idx]]
+  
+  if (n_vars > nrow(vars)) {
+    n_vars <- nrow(vars)
+  } else if (n_vars < 2) {
+    n_vars < 2
+  }
+  
+  vars <- vars$variable[1:n_vars]
+  
+  # Subset environmental layers
+  climate <- terra::subset(env_layers, vars)
+  climate <- terra::scale(climate)
+  
+  # Create hypervolumes
+  data_o <- terra::extract(climate, sdm_data$coord_training[sdm_data$training$presence == 1,], ID = F)
+  hyper_list <- list()
+  hyper_list[[1]] <- suppressMessages(hypervolume(data_o, method = "gaussian", name = "original", verbose = FALSE))
+  
+  # Sample new occurrences
+  # Remove very low values to avoid points on very unlikely areas
+  predicted_dist <- model_predictions[[idx]]
+  predicted_dist[predicted_dist < 0.05] <- 0
+  
+  pred_occ <- terra::spatSample(
+    terra::mask(terra::crop(predicted_dist, env_layers[[1]]),
+                env_layers[[1]]),
+    size = sum(sdm_data$training$presence),
+    method = "weights", na.rm = T, xy = T)
+  
+  data_p <- terra::extract(climate, pred_occ[,1:2], ID = F)
+  
+  hyper_list[[2]] <- suppressMessages(hypervolume(data_p, method = "gaussian", name = "predicted", verbose = FALSE))
+  
+  # Transform hyper_list in an HypervolumeList
+  hyper_list <- hypervolume_join(hyper_list)
+  
+  # Get occupancy statistics
+  hyper_occupancy <- hypervolume_n_occupancy(hyper_list, 
+                                             classification = c("original", "predicted"),
+                                             method = "box",
+                                             FUN = "mean", verbose = F)
+  
+  climatic_occupancy <- hypervolume_to_data_frame(hyper_occupancy) %>%
+    filter(ValueAtRandomPoints != 0) %>%
+    group_by(Name) %>%
+    sample_n(500) %>%
+    ungroup() %>%
+    sample_n(nrow(.)) %>%
+    rename(type = Name, occupancy = ValueAtRandomPoints)
+  
+  sink()
+  # Get plots
+  if (return_plot) {
+    
+    plot_list <- list()
+    
+    var_comb <- expand.grid(option1 = colnames(climatic_occupancy)[2:(ncol(climatic_occupancy)-1)],
+                            option2 = colnames(climatic_occupancy)[2:(ncol(climatic_occupancy)-1)])
+    var_comb <- var_comb[var_comb$option1 != var_comb$option2, ]
+    var_comb <- var_comb[!duplicated(t(apply(var_comb, 1, sort))), ]
+    
+    for (pt in 1:nrow(var_comb)) {
+      
+      eval(parse(text = paste0('
+      c_hull <- na.omit(climatic_occupancy) %>%
+        group_by(type) %>%
+        mutate(hull = 1:n(), hull = factor(hull, chull(', var_comb[pt,1],', ', var_comb[pt,2],'))) %>%
+        arrange(hull)
+                               ')))
+      
+      eval(parse(text = paste0('plot_list[[pt]] <- ggplot(climatic_occupancy) +
+        geom_point(aes(',var_comb[pt,1],', ',var_comb[pt,2],', color = type), alpha = 0.5) +
+        geom_polygon(data = filter(c_hull, !is.na(hull)), aes(',var_comb[pt,1],', ',var_comb[pt,2],',
+        fill = type), alpha = 0.1) +
+        theme_bw() +
+        scale_size_continuous(limits = c(0, 1)) +
+        scale_colour_manual(values = c("#FFC20A", "#0C7BDC")) +
+        scale_fill_manual(values = c("#FFC20A", "#0C7BDC")) +
+        labs(title = "',paste0(var_comb[pt,1],' - ', var_comb[pt,2]),'")')))
+    }
+    
+    p <- eval(parse(text = paste0(
+      paste0("plot_list[[", 1:length(plot_list), "]]", collapse = "+"), "+ patchwork::plot_layout(guides = 'collect')"
+    )))
+  } else {
+    p <- NULL
+  }
+  
+  sink(nullfile())
+  hv_set <- hypervolume_set(hyper_list[[1]], hyper_list[[2]], check.memory=FALSE, verbose = F)
+  
+  overlap <- hypervolume_overlap_statistics(hv_set)
+  sink()
+  
+  return(list(
+    overlap = overlap,
+    occupancy = climatic_occupancy,
+    plot = p
+  ))
+  
+}
+
+.cm_posteval_nicheequiv <- function(sdm_data, predicted_dist, env_layers,
+                                    iterations = 5, plot_example = F,
+                                    ...){
+  #tictoc::tic()
+  bckg_points <- sdm_data$training[sdm_data$training$presence == 0,-1]
+  # Reduce if very large background sample
+  if (nrow(bckg_points) > 50000) {
+    bckg_points <- bckg_points[sample(1:nrow(bckg_points), 50000),]
+  } else if (nrow(bckg_points) < 10000) {
+    warning("Low number of background points for niche ecospat. Sample retrieved.")
+    env_s <- terra::subset(env_layers, colnames(sdm_data$training)[-1])
+    env_s <- as.data.frame(env_s)
+    env_s <- na.omit(env_s)
+    bckg_points <- env_s[sample(1:nrow(env_s), 10000),]
+  }
+  
+  pca_env <- ade4::dudi.pca(bckg_points, 
+                           center = T, scale = T, scannf = F, nf = 2)
+  
+  # Extract scores for background, in this case = env space
+  scores_bckg <- pca_env$li
+  
+  # Extract scores occurrences
+  scores_occ <- ade4::suprow(pca_env, sdm_data$training[sdm_data$training$presence == 1,-1])$lisup
+  
+  results <- data.frame(matrix(ncol = 10, nrow = iterations))
+  colnames(results) <- c("D", "I", "expansion", "stability", "unfiling",
+                         "p_D", "p_I", "p_expansion", "p_stability", "p_unfiling")
+  
+  # Remove very low values to avoid points on very unlikely areas
+  predicted_dist[predicted_dist < 0.05] <- 0
+  
+  for (i in 1:iterations) {
+    pred_occ <- terra::spatSample(
+      terra::mask(terra::crop(predicted_dist, env_layers[[1]]), env_layers[[1]]),
+      size = sum(sdm_data$training$presence),
+      method = "weights", na.rm = T, xy = T)
+    
+    # Extract scores predicted
+    scores_pred <- ade4::suprow(pca_env, terra::extract(terra::subset(env_layers, 
+                                                                      colnames(sdm_data$training[,-1])),
+                                                        pred_occ[,1:2], ID = F))$lisup
+    
+    # Calculate occurence density
+    real_sp <- ecospat::ecospat.grid.clim.dyn(scores_bckg, scores_bckg, scores_occ, R = 100, ...)
+    pred_sp <- ecospat::ecospat.grid.clim.dyn(scores_bckg, scores_bckg, scores_pred, R = 100, ...)
+    
+    # Test equivalency
+    equivalency <- ecospat::ecospat.niche.equivalency.test(real_sp, pred_sp, rep = 10)
+    
+    results[i,] <- c(unlist(equivalency$obs), equivalency$p.D, equivalency$p.I,
+                     equivalency$p.expansion, equivalency$p.stability, equivalency$p.unfilling)
+  }
+  #tictoc::toc()
+  if (plot_example) ecospat::ecospat.plot.niche.dyn(real_sp, pred_sp)
+  
+  return(round(results, 3))
+}

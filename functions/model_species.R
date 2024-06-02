@@ -59,10 +59,15 @@ model_species <- function(species,
                           outfolder,
                           outacro,
                           algorithms = c("maxent", "rf", "brt", "lasso"),
+                          algo_opts = NULL,
                           limit_by_depth = TRUE,
                           depth_buffer = 500,
                           assess_bias = TRUE,
                           correct_bias = TRUE,
+                          post_eval = c("sst", "niche", "hyper"),
+                          tg_metrics = "cbi",
+                          tg_threshold = 0.3,
+                          quad_samp = 50000,
                           verbose = FALSE) {
   
   # Check verbosity
@@ -88,11 +93,18 @@ model_species <- function(species,
   coord_names <- c("decimalLongitude", "decimalLatitude")
   model_log <- obissdm::gen_log(algorithms)
   model_log$taxonID <- species
+  model_log$group <- group
   model_log$model_acro <- outacro
   model_log$model_date <- Sys.Date()
   
+  # Define output paths
+  metric_out <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/metrics/")
+  pred_out <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/predictions/")
+  mod_out <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/models/")
+  fig_out <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/figures/")
+  
   # Load species data
-  if (verbose) cli::cli_alert_info("Reading data")
+  if (verb_1) cli::cli_alert_info("Reading data")
   species_data <- .cm_load_species(species, species_dataset)
   
   treg <- obissdm::.get_time(treg, "Species data loading")
@@ -100,7 +112,7 @@ model_species <- function(species,
   # If data is available, proceeds
   if (nrow(species_data) >= 15) {
     
-    if (verbose) cli::cli_alert_info("Enough number of points, proceeding")
+    if (verb_1) cli::cli_alert_info("Enough number of points, proceeding")
     # PART 1: DATA LOADING ----
     # Load species information
     species_name <- species_data$species[1]
@@ -126,9 +138,9 @@ model_species <- function(species,
     
     # Load environmental data
     env <- get_envofgroup(group, depth = hab_depth, load_all = T,
-                          conf_file = "sdm_conf.yml", verbose = verbose)
+                          conf_file = "sdm_conf.yml", verbose = verb_2)
     
-    env <- .cm_check_coastal(species_data, env, coord_names, verbose)
+    env <- .cm_check_coastal(species_data, env, coord_names, verb_2)
     
     
     # Load ecoregions shapefile
@@ -143,45 +155,81 @@ model_species <- function(species,
     
     
     # PART 2: DATA PREPARING ----
-    if (verbose) cli::cli_alert_info("Preparing data")
+    if (verb_1) cli::cli_alert_info("Preparing data")
+    # # Check which eco-regions are covered by the points
+    # ecoreg_unique <- ecoregions$Realm[is.related(ecoregions,
+    #                                              vect(bind_rows(fit_pts, eval_pts), 
+    #                                                   geom = coord_names), 
+    #                                              "intersects")]
+    # 
+    # model_log$model_details$ecoregions <- ecoreg_unique
+    # ecoreg_occ <- ecoregions[ecoregions$Realm %in% ecoreg_unique,]
+    # 
+    # # Apply a buffer to ensure that all areas are covered
+    # sf::sf_use_s2(FALSE)
+    # ecoreg_occ_buff <- suppressMessages(
+    #   suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(ecoreg_occ), 0.2)))
+    # )
+    # 
+    # adj_ecoreg <- ecoregions$Realm[is.related(ecoregions, ecoreg_occ_buff,
+    #                                           "intersects")]
+    # 
+    # # Mask areas
+    # ecoreg_sel <- ecoregions[ecoregions$Realm %in% unique(
+    #   c(ecoreg_unique, adj_ecoreg)
+    # ),]
+    # model_log$model_details$ecoregions_included <- unique(ecoreg_sel$Realm)
+    # 
+    # # Apply a buffer to ensure that all areas are covered
+    # sf::sf_use_s2(FALSE)
+    # ecoreg_sel <- suppressMessages(
+    #   suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(ecoreg_sel), 0.5)))
+    # )
+    # 
+    # # Limit to max extension based on distance to the points
+    # max_ext <- ext(vect(rbind(fit_pts, eval_pts), geom = coord_names))
+    # max_ext <- ext(as.vector(max_ext) + c(-20, 20, -20, 20))
+    # ecoreg_sel <- crop(ecoreg_sel, max_ext)
+    
+    #### ALTERNATIVE
+
     # Check which eco-regions are covered by the points
     ecoreg_unique <- ecoregions$Realm[is.related(ecoregions,
-                                                 vect(bind_rows(fit_pts, eval_pts), 
-                                                      geom = coord_names), 
+                                                 vect(bind_rows(fit_pts, eval_pts),
+                                                      geom = coord_names),
                                                  "intersects")]
-    
+
     model_log$model_details$ecoregions <- ecoreg_unique
     ecoreg_occ <- ecoregions[ecoregions$Realm %in% ecoreg_unique,]
-    
+
     # Apply a buffer to ensure that all areas are covered
     sf::sf_use_s2(FALSE)
     ecoreg_occ_buff <- suppressMessages(
-      suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(ecoreg_occ), 0.2)))
+      suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(vect(bind_rows(fit_pts, eval_pts),
+                                                            geom = coord_names)), 0.2)))
     )
-    
+
     adj_ecoreg <- ecoregions$Realm[is.related(ecoregions, ecoreg_occ_buff,
                                               "intersects")]
-    
+
     # Mask areas
     ecoreg_sel <- ecoregions[ecoregions$Realm %in% unique(
       c(ecoreg_unique, adj_ecoreg)
     ),]
     model_log$model_details$ecoregions_included <- unique(ecoreg_sel$Realm)
-    
+
     # Apply a buffer to ensure that all areas are covered
     sf::sf_use_s2(FALSE)
     ecoreg_sel <- suppressMessages(
       suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(ecoreg_sel), 0.5)))
     )
-    
-    # Limit to max extension based on distance to the points
-    max_ext <- ext(vect(rbind(fit_pts, eval_pts), geom = coord_names))
-    max_ext <- ext(as.vector(max_ext) + c(-20, 20, -20, 20))
-    ecoreg_sel <- crop(ecoreg_sel, max_ext)
+    # TODO: correct ecoregions layer for the central america area
+
+    ####
     
     # Limit by depth if TRUE
     if (limit_by_depth) {
-      if (verbose) cli::cli_alert_info("Limiting by depth")
+      if (verb_1) cli::cli_alert_info("Limiting by depth")
       # To decide if this step will be kept:
       # Load bathymetry layer
       bath <- rast("data/env/terrain/bathymetry_mean.tif")
@@ -217,28 +265,33 @@ model_species <- function(species,
     }
     
     # Assess SAC
-    fit_pts_sac <- try(obissdm::outqc_sac(fit_pts, 
-                                          env_layers = subset(env$layers, env$hypothesis[[1]]),
-                                          plot_result = FALSE,
-                                          verbose = verbose))
+    # fit_pts_sac <- try(obissdm::outqc_sac(fit_pts, 
+    #                                       env_layers = subset(env$layers, env$hypothesis[[1]]),
+    #                                       plot_result = FALSE,
+    #                                       verbose = verbose))
+    fit_pts_sac <- try(obissdm::outqc_sac_mantel(fit_pts, 
+                                                 env_layers = subset(env$layers, env$hypothesis[[1]]),
+                                                 plot_result = FALSE,
+                                                 verbose = verb_2))
     
     if (inherits(fit_pts_sac, "try-error")) {
       fit_pts_sac <- fit_pts
     } 
     
     # Make data object
-    quad_n <- ifelse(nrow(as.data.frame(env$layers, xy = T, na.rm = T)) < 50000,
-                     round(nrow(as.data.frame(env$layers, xy = T, na.rm = T))), 50000)
+    quad_n <- ifelse(nrow(as.data.frame(env$layers, xy = T, na.rm = T)) < quad_samp,
+                     round(nrow(as.data.frame(env$layers, xy = T, na.rm = T))), quad_samp)
+    model_log$model_details$background_size <- quad_n 
     
     sp_data <- mp_prepare_data(fit_pts_sac, eval_data = eval_pts,
                                species_id = species_name,
                                env_layers = env$layers,
                                quad_number = quad_n,
-                               verbose = verbose)
+                               verbose = verb_2)
     
     block_grid <- get_block_grid(sp_data, env$layers,
                                  sel_vars = env$hypothesis$basevars,
-                                 verbose = verbose)
+                                 verbose = verb_2)
     
     sp_data <- mp_prepare_blocks(sp_data,
                                  method = "manual",
@@ -246,7 +299,7 @@ model_species <- function(species,
                                  n_iterate = 300,
                                  retry_if_zero = TRUE,
                                  manual_shp = block_grid,
-                                 verbose = verbose)
+                                 verbose = verb_2)
     
     model_log$model_details$block_size <- unname(sp_data$blocks$grid_resolution)
     model_log$model_fit_points <- sum(sp_data$training$presence)
@@ -256,60 +309,53 @@ model_species <- function(species,
     
     # PART 3: ASSESS SPATIAL BIAS ----
     if (assess_bias) {
-      if (verbose) cli::cli_alert_info("Assessing spatial bias")
+      if (verb_1) cli::cli_alert_info("Assessing spatial bias")
+      
+      require(spatstat)
+      
       # Add some way of assessing spatial bias
       model_log$model_details$control_bias <- correct_bias
       
       # Get spatstat statistics and point process for control
       spat_im <- as.im(as.data.frame(aggregate(env$layers[[1]], 10, na.rm = T), xy = T))
       spat_window <- as.owin(spat_im)
-      # Define ppp object based on  point locations
+      
+      # Define ppp object based on point locations
       spat_ppp <- ppp(x = sp_data$coord_training$decimalLongitude[sp_data$training$presence == 1],
                       y = sp_data$coord_training$decimalLatitude[sp_data$training$presence == 1],
                       window = spat_window)
+      
       # calculate envelope around L-hat estimates.
       spat_env_k <- envelope(spat_ppp, Kest, verbose = F)
       spat_env_l <- envelope(spat_ppp, Lest, verbose = F)
       
-      # Point process model (?)
-      spat_quad <- ppp(x = sp_data$coord_training$decimalLongitude[sp_data$training$presence == 0],
-                       y = sp_data$coord_training$decimalLatitude[sp_data$training$presence == 0],
-                       window = spat_window)
-      spat_quad_sc <- quadscheme(data = spat_ppp, dummy = spat_quad, method = "dirichlet")
-      spat_data_obj <- lapply(1:nlyr(env$layers), function(x){
-        as.im(as.data.frame(aggregate(env$layers[[x]], 4, na.rm = T), xy = T))
-      })
-      names(spat_data_obj) <- names(env$layers)
-      spat_ppm <- ppm(spat_quad_sc,
-                      trend = as.formula(paste("~",
-                                               paste(names(spat_data_obj)[
-                                                 names(spat_data_obj) %in% env$hypothesis[[1]]
-                                               ], collapse = "+"))),
-                      covariates = spat_data_obj)
-      
-      spat_pred <- predict(spat_ppm, covariates = spat_data_obj, ngrid = c(spat_data_obj[[1]]$dim[1], spat_data_obj[[1]]$dim[2]))
+      # save information
+      if (!dir.exists(metric_out)) fs::dir_create(metric_out)
+      outfile <- paste0(metric_out, "taxonid=", species, "_model=", outacro,
+                        "_what=biasmetrics.rds")
+      saveRDS(list(k_stat = spat_env_k, l_stat = spat_env_l),
+              file = outfile)
+      # TODO: check if it is saved correct and if plot need to be saved
       
       if (correct_bias) {
-        bias_layer <- density(spat_ppp, sigma = 1)
-        bias_layer <- rast(bias_layer)
-        bias_layer <- disagg(bias_layer, 10)
-        crs(bias_layer) <- crs("EPSG:4326")
-        bias_layer <- project(bias_layer, env$layers[[1]])
-        bias_layer <- mask(bias_layer, env$layers[[1]])
+        # TODO: Add bias correction method
       }
         
       treg <- obissdm::.get_time(treg, "Sample bias assessment")
     }
     
-    
     # PART 4: MODEL SELECTION ----
-    if (verbose) cli::cli_alert_info("Model selection")
+    if (verb_1) cli::cli_alert_info("Model selection")
     multi_mod_max <- sdm_multhypo(sdm_data = sp_data, sdm_method = "maxent",
                                   variables = env$hypothesis,
-                                  verbose = verbose)
+                                  verbose = verb_2)
+    
+    model_log$model_details$hypothesis_tested <- env$hypothesis
+    model_log$model_details$best_hypothesis <- multi_mod_max$best_model
+    model_log$model_details$variables <- multi_mod_max$best_variables
     
     if (correct_bias) {
-      if (verbose) cli::cli_alert_info("Testing bias correction")
+      if (verb_1) cli::cli_alert_info("Testing bias correction")
       temp_data <- sp_data
       temp_data$training <- temp_data$training[, c("presence", multi_mod_max$best_variables)]
       temp_data$eval_data <- temp_data$eval_data[, c("presence", multi_mod_max$best_variables)]
@@ -345,12 +391,20 @@ model_species <- function(species,
     treg <- obissdm::.get_time(treg, "Model selection")
     
     
-    # PART 4: FIT MODELS ----
-    if (verbose) cli::cli_alert_info("Starting model fitting")
+    # PART 5: FIT MODELS ----
+    if (verb_1) cli::cli_alert_info("Starting model fitting")
+    if (!is.null(algo_opts)) {
+      algo_opts <- algo_opts[algorithms]
+    } else {
+      algo_opts <- obissdm::sdm_options()
+      algo_opts <- algo_opts[algorithms]
+    }
     model_fits <- list()
     for (i in 1:length(algorithms)) {
-      if (verbose) cli::cli_alert_info("Fitting {algorithms[i]}")
-      model_fits[[i]] <- try(do.call(paste0("sdm_module_", algorithms[i]), list(sp_data, verbose = verbose)))
+      if (verb_1) cli::cli_alert_info("Fitting {algorithms[i]}")
+      model_fits[[i]] <- try(do.call(paste0("sdm_module_", algorithms[i]),
+                                     list(sp_data, verbose = verb_2,
+                                          options = algo_opts[[i]])))
       if (inherits(model_fits[[i]], "try-error")) {
         model_log$model_result[[algorithms[i]]] <- "failed"
         model_fits[[i]] <- NULL
@@ -359,28 +413,13 @@ model_species <- function(species,
       }
     }
     
-    # For some reason was not registering in the log... using for instead
-    # model_fits <- lapply(algorithms, function(algo) {
-    #   fit <- try(do.call(paste0("sdm_module_", algo), list(sp_data)))
-    #   if (inherits(fit, "try-error")) {
-    #     model_log$model_result[[algo]] <- "failed"
-    #     return(NULL)
-    #   } else {
-    #     model_log$model_result[[algo]] <- "succeeded"
-    #     return(fit)
-    #   }
-    # })
-    
     treg <- obissdm::.get_time(treg, "Model fit")
     
     
     if (any(unlist(model_log$model_result) == "succeeded")) {
-      if (verbose) cli::cli_alert_info("Model fitting concluded. Checking if models are good")
-      # PART 5: PREDICTION ----
-      
-      # Define thresholds
-      tg_metrics <- "cbi"
-      tg_threshold <- 0.3
+      if (verb_1) cli::cli_alert_info("Model fitting concluded. Checking if models are good")
+     
+       # PART 6: PREDICTION ----
       
       # Get what models are above threshold
       good_models <- lapply(model_fits, function(model){
@@ -409,26 +448,29 @@ model_species <- function(species,
       good_models <- which(unlist(good_models))
       
       if (length(good_models) > 0) {
-        if (verbose) cli::cli_alert_info("Good models available, predicting.")
+        if (verb_1) cli::cli_alert_info("Good models available, predicting.")
         # Predict models
         model_predictions <- lapply(good_models, function(id) {
           model_name <- model_fits[[id]]$name
+          if (verb_1) cli::cli_alert_info("Predicting model {id} - {model_name}")
           
           best_hyp <- multi_mod_max$best_model
           
-          outpath <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/predictions/")
+          if (!dir.exists(pred_out)) fs::dir_create(pred_out)
           
-          if (!dir.exists(outpath)) fs::dir_create(outpath)
+          outmess <- paste0(pred_out, "taxonid=", species, "_model=", outacro, "_what=mess.tif")
+          outshape <- paste0(pred_out, "taxonid=", species, "_model=", outacro, "_what=shape.tif")
           
-          outmess <- paste0(outpath, "taxonid=", species, "_model=", outacro, "_what=mess.tif")
-          
-          if (!file.exists(gsub("mess", "mess_cog", outmess))) {do_mess <- TRUE} else {do_mess <- FALSE} 
+          if (!file.exists(gsub("mess", "mess_cog", outmess))) {do_shape <- do_mess <- TRUE} else {do_shape <- do_mess <- FALSE} 
           
           scenarios <- data.frame(
             scenario = c("current", rep(c("ssp126", "ssp245", "ssp370", "ssp460", "ssp585"),
                                         each = 2)),
             year = c(NA, rep(c("dec50", "dec100"), 5))
           )
+          # Reduced for testings
+          # scenarios <- data.frame(scenario = c("current", "ssp126"), year = c(NA,"dec50"))
+          # scenarios <- data.frame(scenario = c("current"), year = c(NA))
           
           for (k in 1:nrow(scenarios)) {
             
@@ -438,7 +480,10 @@ model_species <- function(species,
               period <- scenarios$year[k]
             }
             
-            if (verbose) cli::cli_alert_info("Predicting scenario {k} of {nrow(scenarios)}.")
+            if (verb_1) cli::cli_alert_info("Predicting scenario {k} of {nrow(scenarios)}.")
+            outpred <- paste0(pred_out, "taxonid=", species, "_model=", outacro,
+                              "_method=", model_name, "_scen=", scenarios$scenario[k],
+                              ifelse(is.null(period), "", paste0("_", period)), ".tif")
             
             env_to_pred <- obissdm::get_envofgroup(group,
                                                    depth = hab_depth, load_all = F,
@@ -447,26 +492,33 @@ model_species <- function(species,
                                                    hypothesis = best_hyp,
                                                    env_folder = "data/env",
                                                    conf_file = "sdm_conf.yml", 
-                                                   verbose = verbose)
+                                                   verbose = verb_2)
+            env_to_pred <- terra::subset(env_to_pred, colnames(sp_data$training)[-1])
             
             pred <- predict(model_fits[[id]], env_to_pred)
             
             names(pred) <- paste0(scenarios$scenario[k], ifelse(is.null(period), "", paste0("_", period)))
             
+            pred <- pred * 100
+            pred <- as.int(pred)
+            writeRaster(pred, outpred, overwrite = T, datatype = "INT1U")
+            cogeo_optim(outpred)
+            
+            if (k == 1) {
+              pred_f <- pred
+            }
+            
             if (do_mess) {
               # Save MESS
-              if (!exists("to_mess")) {
-                maxpt <- nrow(as.data.frame(env_to_pred, xy = T, na.rm = T))
-                to_mess <- sample(1:maxpt,
-                                  ifelse(maxpt > 10000, 10000, maxpt))
-              }
+              if (verb_1) cli::cli_alert_info("Generating MESS map.")
+              to_mess <- terra::aggregate(env_to_pred, 12)
               mess_map <- ecospat::ecospat.mess(
-                na.omit(as.data.frame(env_to_pred, xy = T)[to_mess,]), 
+                na.omit(as.data.frame(to_mess, xy = T)),
                 cbind(sp_data$coord_training, sp_data$training[,2:ncol(sp_data$training)]))
-              mess_map_t <- env_to_pred[[1]]
+              mess_map_t <- to_mess[[1]]
               mess_map_t[] <- NA
               mess_map_t[cellFromXY(mess_map_t, mess_map[,1:2])] <- mess_map[,5]
-              mess_map <- mask(mess_map_t, env_to_pred[[1]])
+              mess_map <- mess_map_t
               
               names(mess_map) <- names(pred) <- paste0(scenarios$scenario[k], ifelse(is.null(period), "", paste0("_", period)))
               
@@ -477,23 +529,78 @@ model_species <- function(species,
               }
             }
             
-            
-            if (k == 1) {
-              pred_f <- pred
-            } else {
-              pred_f <- c(pred_f, pred)
+            if (do_shape) {
+              if (verb_1) cli::cli_alert_info("Generating SHAPE map.")
+              # Reduce dataset for faster implementing
+              shape_data <- sp_data$training
+              which_p <- which(shape_data$presence == 1)
+              if (sum(shape_data$presence) > 1000) {
+                which_p <- sample(which_p, 1000)
+              }
+              which_a <- sample(which(shape_data$presence == 0), 1000)
+              shape_data <- shape_data[c(which_p, which_a),]
+              shape_data_coords <- sp_data$coord_training[c(which_p, which_a),]
+              names(shape_data_coords) <- c("x", "y")
+              
+              shape_res <- try(flexsdm::extra_eval(
+                shape_data,
+                "presence",
+                projection_data = env_to_pred,
+                aggreg_factor = 12 # For faster implementing
+              ), silent = T)
+              
+              if (!inherits(shape_res, "try-error")) {
+                
+                if (k == 1) {
+                  outpath_fig <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/figures/")
+                  if (!dir.exists(outpath_fig)) fs::dir_create(outpath_fig)
+                  outfile_fig <- paste0(outpath_fig,
+                                        "taxonid=", species, "_model=", outacro, "_method=", model_name,
+                                        "_what=shape.png")
+                  shape_plot <- suppressMessages(
+                    try(flexsdm::p_extra(
+                      training_data = cbind(shape_data_coords, shape_data),
+                      pr_ab = "presence",
+                      extra_suit_data = terra::aggregate(shape_res, 12),
+                      projection_data = terra::aggregate(env_to_pred, 12),
+                      geo_space = TRUE,
+                      prop_points = 0.05,
+                      alpha_p = 0.2
+                    ), silent = T)
+                  )
+                  
+                  ragg::agg_png(outfile_fig, width = 6, height = 2.5, units = "in", res = 300, scaling = 0.4)
+                  print(shape_plot)
+                  dof <- dev.off()
+                  rm(dof, shape_plot)
+                }
+                
+                #shape_res <- shape_res * 100
+                shape_res <- aggregate(shape_res, fact = 12)
+                shape_res <- as.int(shape_res)
+                names(shape_res) <- paste0(scenarios$scenario[k], ifelse(is.null(period), "", paste0("_", period)))
+                
+                if (k == 1) {
+                  pred_shape <- shape_res
+                } else {
+                  pred_shape <- c(pred_shape, shape_res)
+                }
+              }
             }
+            
           }
-          
-          writeRaster(pred_f, paste0(outpath, "taxonid=", species, "_model=", outacro, "_method=", model_name,".tif"),
-                      overwrite = T)
           
           if (do_mess) {
-            writeRaster(pred_mess, outmess, overwrite = T)
+            pred_mess <- as.int(pred_mess)
+            writeRaster(pred_mess, outmess, overwrite = T, datatype = "INT1U")
             cogeo_optim(outmess)
           }
+          if (do_shape) {
+            writeRaster(pred_shape, outshape, overwrite = T, datatype = "INT2U")
+            cogeo_optim(outshape)
+          }
           
-          return(pred_f[["current"]])
+          return(pred_f)
           
         })
         
@@ -501,27 +608,26 @@ model_species <- function(species,
         
         
         
-        # PART X: GET RESPONSE CURVES ----
-        if (verbose) cli::cli_alert_info("Getting response curves")
+        # PART 7: GET RESPONSE CURVES ----
+        if (verb_1) cli::cli_alert_info("Getting response curves")
         # Predict models
         model_respcurves <- lapply(good_models, function(id) {
           
           model_name <- model_fits[[id]]$name
           
-          outpath <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/metrics/")
-          if (!dir.exists(outpath)) fs::dir_create(outpath)
-          outfile <- paste0(outpath,
+          if (!dir.exists(metric_out)) fs::dir_create(metric_out)
+          outfile <- paste0(metric_out,
                             "taxonid=", species, "_model=", outacro, "_method=", model_name,
                             "_what=respcurves.parquet")
           
+          # TODO: Include fit_range or not on the resp_curves FUN
           rcurves <- resp_curves(model_fits[[id]],
                                  subset(env$layers, multi_mod_max$best_variables))
           
-          write_parquet(rcurves, outfile)
+          arrow::write_parquet(rcurves, outfile)
           
-          outpath <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/figures/")
-          if (!dir.exists(outpath)) fs::dir_create(outpath)
-          outfile <- paste0(outpath,
+          if (!dir.exists(fig_out)) fs::dir_create(fig_out)
+          outfile <- paste0(fig_out,
                             "taxonid=", species, "_model=", outacro, "_method=", model_name,
                             "_what=responsecurves.png")
           
@@ -536,46 +642,85 @@ model_species <- function(species,
         treg <- obissdm::.get_time(treg, "Response curves")
         
         
+        # Variables importance
+        model_varimport <- lapply(good_models, function(id){
+          model_name <- model_fits[[id]]$name
+          varimport <- obissdm::variable_importance(model_fits[[id]], sdm_data = sp_data)
+          
+          outfile <- paste0(metric_out,
+                            "taxonid=", species, "_model=", outacro, "_method=", model_name,
+                            "_what=varimportance.parquet")
+          
+          arrow::write_parquet(varimport, outfile)
+          return(varimport)
+        })
         
-        # PART X: ENSEMBLE ----
         if (length(good_models) > 1) {
-          if (verbose) cli::cli_alert_info("Enough number of models, ensembling")
+          model_varimport_means <- lapply(model_varimport, function(x) {
+            x$mean
+          })
+          model_varimport_sd <- apply(do.call("cbind", model_varimport_means), 
+                                      1, sd, na.rm = T)
+          model_varimport_sd <- round(model_varimport_sd, 3)
+          model_varimport_means <- apply(do.call("cbind", model_varimport_means), 
+                                         1, mean, na.rm = T)
+          model_varimport_means <- round(model_varimport_means, 3)
+          ens_var_imp <- model_varimport[[1]][,1:2]
+          ens_var_imp$mean <- model_varimport_means
+          ens_var_imp$sd <- model_varimport_sd
+          outfile <- paste0(metric_out,
+                            "taxonid=", species, "_model=", outacro, "_method=ensemble",
+                            "_what=varimportance.parquet")
+          
+          arrow::write_parquet(ens_var_imp, outfile)
+          model_varimport <- c(model_varimport, list(ens_var_imp))
+        }
+        
+        treg <- obissdm::.get_time(treg, "Variable importance")
+        
+        # PART 8: ENSEMBLE ----
+        if (length(good_models) > 1) {
+          if (verb_1) cli::cli_alert_info("Enough number of models, ensembling")
           
           to_ensemble <- list.files(paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/predictions/"),
                                     pattern = "\\.tif$", full.names = T)
           to_ensemble <- to_ensemble[grepl(paste0(substr(algorithms, 1, 3)[good_models], collapse = "|"), to_ensemble)]
-          to_ensemble <- lapply(to_ensemble, rast)
-          lays <- nlyr(to_ensemble[[1]])
           
-          ensemble <- lapply(1:lays, function(l){
-            pull_l <- lapply(to_ensemble, function(r){
-              r[[l]]
-            })
-            pull_l <- rast(pull_l)
-            ensemble_models("median", pull_l)
-          })
+          to_ensemble_g <- stringr::str_extract(to_ensemble, "scen=*.*_")
+          to_ensemble_g <- gsub("scen=", "", to_ensemble_g)
+          to_ensemble_g <- unique(to_ensemble_g)
           
-          ensemble_cv <- rast(lapply(ensemble, function(x) x[[2]]))
-          ensemble <- rast(lapply(ensemble, function(x) x[[1]]))
+          for (un in 1:length(to_ensemble_g)) {
+            to_ensemble_r <- rast(to_ensemble[grepl(to_ensemble_g[un], to_ensemble)])
+            
+            ensemble <- ensemble_models("median", to_ensemble_r)
+            
+            ensemble_cv <- ensemble[[2]]
+            ensemble_mean <- ensemble[[1]]
+            
+            if (grepl("current", to_ensemble_g[un])) {
+              ensemble_curr <- ensemble_mean
+            }
+            
+            names(ensemble_mean) <- gsub("_$", "", to_ensemble_g[un])
+            names(ensemble_cv) <- paste0(names(ensemble_mean), "_sd")
+            
+            outens <- paste0(pred_out, 
+                             "taxonid=", species, "_model=", outacro, "_method=ensemble_scen=", gsub("_$", "", to_ensemble_g[un]), ".tif")
+            
+            writeRaster(c(ensemble_mean, ensemble_cv), outens,
+                        overwrite = T)
+            res_ens <- cogeo_optim(outens)
+            rm(ensemble, ensemble_mean, ensemble_cv)
+          }
           
-          names(ensemble) <- names(ensemble_cv) <- names(to_ensemble[[1]])
-          names(ensemble_cv) <- paste0(names(ensemble_cv), "_sd")
-          
-          outens <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/predictions/", 
-                           "taxonid=", species, "_model=", outacro, "_method=ensemble.tif")
-          
-          writeRaster(c(ensemble, ensemble_cv), outens,
-                      #wopt=list(verbose=TRUE),
-                      overwrite = T)
-          
-          model_predictions <- c(model_predictions, ensemble[[1]])
-          
-          res_ens <- cogeo_optim(outens)
+          model_predictions <- c(model_predictions, ensemble_curr)
+          model_log$model_result$ensemble <- "succeeded"
           
           # Evaluate ensemble
-          ensemble_curr <- ensemble[[1]]
+          ensemble_curr <- ensemble_curr / 100
           
-          fit_ens <- extract(ensemble_curr, sp_data$coord_training, ID = F)
+          fit_ens <- terra::extract(ensemble_curr, sp_data$coord_training, ID = F)
           
           fit_ens_eval <- obissdm::eval_metrics(sp_data$training$presence, fit_ens[,1])
           
@@ -584,69 +729,104 @@ model_species <- function(species,
             
             eval_ens_eval <- obissdm::eval_metrics(sp_data$eval_data$presence, eval_ens[,1])
             
-            ensemble_metrics <- rbind(cbind(as.data.frame(t(fit_ens_eval)), origin = "fit_data"),
-                                      cbind(as.data.frame(t(eval_ens_eval)), origin = "eval_data"))
+            ensemble_metrics <- rbind(cbind(as.data.frame(t(fit_ens_eval)), what = "full", origin = "fit_data"),
+                                      cbind(as.data.frame(t(eval_ens_eval)), what = "full", origin = "eval_data"))
           } else {
-            ensemble_metrics <- cbind(as.data.frame(t(fit_ens_eval)), origin = "fit_data")
+            ensemble_metrics <- cbind(as.data.frame(t(fit_ens_eval)), what = "full", origin = "fit_data")
           }
           
-          # Get average of models
-          avg_fit_metrics <- as.data.frame(t(apply(do.call("rbind", lapply(good_models, function(id){
-            t(apply(model_fits[[id]]$cv_metrics, 2, mean, na.rm = T))
-          })), 2, mean, na.rm = T)))
-          avg_fit_metrics$origin <- "avg_fit"
+          # Get list of metrics
+          metrics_list <- lapply(good_models, function(id){
+            model_fits[[id]]$cv_metrics
+          })
+          
+          # Convert the list of data frames into a 3-dimensional array
+          metrics_array <- array(unlist(metrics_list), dim = c(nrow(metrics_list[[1]]), ncol(metrics_list[[1]]), length(metrics_list)))
+          
+          # Calculate the mean across the third dimension (which represents the data frames)
+          metrics_mean_df <- apply(metrics_array, c(1, 2), mean, na.rm = T)
+          metrics_mean_sd <- apply(metrics_array, c(1, 2), sd, na.rm = T)
+          
+          # Convert the resulting matrix back to a data frame and set the column names
+          metrics_mean_df <- as.data.frame(metrics_mean_df)
+          colnames(metrics_mean_df) <- colnames(metrics_list[[1]])
+          metrics_mean_df$what <- "mean"
+          metrics_mean_df$origin <- "avg_fit"
+          
+          metrics_mean_sd <- as.data.frame(metrics_mean_sd)
+          colnames(metrics_mean_sd) <- colnames(metrics_list[[1]])
+          metrics_mean_sd$what <- "sd"
+          metrics_mean_sd$origin <- "avg_fit"
+          
+          avg_fit_metrics <- rbind(metrics_mean_df, metrics_mean_sd)
           
           if (!is.null(sp_data$eval_data)) {
-            avg_eval_metrics <- as.data.frame(t(apply(do.call("rbind", lapply(good_models, function(id){
-              t(model_fits[[id]]$eval_metrics)
-            })), 2, mean, na.rm = T)))
-            avg_eval_metrics$origin <- "avg_eval"
-            avg_fit_metrics <- rbind(avg_fit_metrics, avg_eval_metrics)
+            
+            # Get list of metrics
+            metrics_list <- lapply(good_models, function(id){
+              model_fits[[id]]$eval_metrics
+            })
+            metrics_list <- do.call("rbind", metrics_list)
+            
+            # Calculate the mean across
+            eval_metrics_mean_df <- apply(metrics_list, 2, mean, na.rm = T)
+            eval_metrics_mean_sd <- apply(metrics_list, 2, sd, na.rm = T)
+            
+            # Convert the resulting matrix back to a data frame
+            eval_metrics_mean_df <- as.data.frame(t(eval_metrics_mean_df))
+            eval_metrics_mean_df$what <- "mean"
+            eval_metrics_mean_df$origin <- "avg_eval"
+            
+            eval_metrics_mean_sd <- as.data.frame(t(eval_metrics_mean_sd))
+            eval_metrics_mean_sd$what <- "sd"
+            eval_metrics_mean_sd$origin <- "avg_eval"
+            
+            avg_fit_metrics <- rbind(avg_fit_metrics, eval_metrics_mean_df, eval_metrics_mean_sd)
+            
           }
           
           ensemble_metrics <- rbind(ensemble_metrics, avg_fit_metrics)
           
-          # TODO: add SD?
-          
-          write_parquet(ensemble_metrics,
-                        paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/metrics/", 
+          arrow::write_parquet(ensemble_metrics,
+                        paste0(metric_out, 
                                "taxonid=", species, "_model=", outacro,
-                               "_method=ensemble_what=metrics.parquet"))
+                               "_method=ensemble_what=cvmetrics.parquet"))
         }
         
         # Ensemble response curves
         if (length(good_models) > 1) {
-          to_ensemble <- list.files(paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/metrics/"),
+          to_ensemble <- list.files(metric_out,
                                     pattern = "what=resp", full.names = T)
           to_ensemble <- to_ensemble[grepl(paste0(substr(algorithms, 1, 3)[good_models], collapse = "|"), to_ensemble)]
-          to_ensemble <- lapply(to_ensemble, read_parquet)
+          to_ensemble <- lapply(to_ensemble, arrow::read_parquet)
           
           init_data <- to_ensemble[[1]]
           
-          for (k in 2:length(to_ensemble)) {
+          for (k in 1:length(to_ensemble)) {
             tdf <- data.frame(to_ensemble[[2]][,c("response")])
             colnames(tdf) <- paste0("response_", k)
             init_data <- cbind(init_data, tdf)
           }
           
           ens_resp <- apply(init_data[,startsWith(colnames(init_data), "resp")], 1, "median")
+          ens_resp_sd <- apply(init_data[,startsWith(colnames(init_data), "resp")], 1, "sd")
           
-          ens_resp_curves <- cbind(init_data[,c("variable", "base")], response = ens_resp)
+          ens_resp_curves <- cbind(init_data[,c("variable", "base")], response = ens_resp, response_sd = ens_resp_sd)
           
-          outpath <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/metrics/")
-          outfile <- paste0(outpath,
+          outfile <- paste0(metric_out,
                             "taxonid=", species, "_model=", outacro, "_method=ensemble",
                             "_what=respcurves.parquet")
           
-          write_parquet(ens_resp_curves, outfile)
+          arrow::write_parquet(ens_resp_curves, outfile)
           
         }
         
+        treg <- obissdm::.get_time(treg, "Ensemble")
         
-        
-        # PART X: SAVE BINARIZATION INFO ----
-        if (verbose) cli::cli_alert_info("Saving binarization info")
+        # PART 9: SAVE BINARIZATION INFO ----
+        if (verb_1) cli::cli_alert_info("Saving binarization info")
         # Get thresholds
+        model_predictions <- lapply(model_predictions, function(x) {x/100})
         # P10 threshold
         thresh_p10_mtp <- lapply(model_predictions, function(pred) {
           predv <- raster::extract(pred, sp_data$coord_training[sp_data$training$presence == 1,], ID = F)[,1]
@@ -677,27 +857,14 @@ model_species <- function(species,
         
         thresh <- left_join(thresh_p10_mtp, thresh_maxss, by = "model")
         
-        outpath <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/metrics/")
-        write_parquet(thresh, paste0(outpath,
+        arrow::write_parquet(thresh, paste0(metric_out,
                                      "taxonid=", species, "_model=", outacro,
                                      "_what=thresholds.parquet"))
         
         
         
-        # PART X: OPTIMIZE GEOTIFF (COG FORMAT) ----
-        if (verbose) cli::cli_alert_info("Optimizing rasters (COG)")
-        
-        to_optimize <- list.files(paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/predictions"), full.names = T)
-        to_optimize <- to_optimize[!grepl("aux", to_optimize)]
-        to_optimize <- to_optimize[!grepl("cog", to_optimize)]
-        
-        optimize_result <- lapply(to_optimize, cogeo_optim)
-        optimize_result <- do.call("rbind", optimize_result)
-        
-        
-        
-        # PART X: CREATE MASKS AND SAVE ----
-        if (verbose) cli::cli_alert_info("Saving masks")
+        # PART 10: CREATE MASKS AND SAVE ----
+        if (verb_1) cli::cli_alert_info("Saving masks")
         
         # Get base raster
         base_layer <- rast("data/env/terrain/bathymetry_mean.tif")
@@ -716,161 +883,128 @@ model_species <- function(species,
         masks <- c(ecoreg_occ_mask, ecoreg_mask, fit_mask)
         names(masks) <- c("native_ecoregions", "fit_ecoregions", "fit_region")
         
-        outmask <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/predictions/", 
+        outmask <- paste0(pred_out, 
                           "taxonid=", species, "_model=", outacro, "_mask.tif")
         terra::writeRaster(masks, outmask, overwrite = T)
         mask_opt <- cogeo_optim(outmask)
         if (file.exists(paste0(outmask, ".aux.json"))) fs::file_delete(paste0(outmask, ".aux.json"))
         
-        treg <- obissdm::.get_time(treg, "File optimization")
+        treg <- obissdm::.get_time(treg, "Masks")
         
         
         
-        # PART X: EVALUATE MODELS USING OTHER TECHNIQUES ----
-        if (verbose) cli::cli_alert_info("Performing post-evaluation")
+        # PART 11: EVALUATE MODELS USING OTHER TECHNIQUES ----
+        if (verb_1) cli::cli_alert_info("Performing post-evaluation")
         
-        # TEST 1: ENVIRONMENTAL SPACE
-        # Make PCA
-        # pca_env <- princomp(scale(subset(env$layers, multi_mod_max$best_variables)),
-        #                     maxcell = (ncell(env$layers[[1]]) * .5))
-        # pca_env_pred <- predict(scale(subset(env$layers, multi_mod_max$best_variables)), pca_env, index = 1:2)
-        # 
-        # # Extract at data points
-        # pca_fit <- terra::extract(pca_env_pred, sp_data$coord_training[sp_data$training$presence == 1,], ID = F)
-        # 
-        # # Extract at SAMPLED data points
-        # pca_pred <- lapply(model_predictions, function(pred){
-        #   pred <- mask(pred, masks$fit_region)
-        #   
-        #   samp_pred <- spatSample(pred, size = sum(sp_data$training$presence), method = "weights", values = F, xy = T, na.rm = T)
-        #   
-        #   terra::extract(pca_env_pred, samp_pred, ID = F)
-        # })
-        # 
-        # plot(NULL, xlim = minmax(pca_env_pred)[,1], ylim = minmax(pca_env_pred)[,2])
-        # 
-        # points(pca_fit, pch = 20, cex = .5, col = "blue")
-        # points(pca_pred[[1]], pch = 20, cex = .5, col = "red")
-        # 
-        # chul1 <- chull(pca_fit)
-        # chul1 <- c(chul1, chul1[1])
-        # chul1 <- vect(as.matrix(pca_fit[chul1,]), type = "polygons")
-        # 
-        # chul2 <- chull(pca_pred[[1]])
-        # chul2 <- c(chul2, chul2[1])
-        # chul2 <- vect(as.matrix(pca_pred[[1]][chul2,]), type = "polygons")
-        # 
-        # lines(chul1, col = "blue")
-        # lines(chul2, col = "red")
-        
-        
-        # Add Hypervolume option, # TODO
-        
-        # TEST 2 - temperature kernel
-        # Load temperature information
-        temp_layer <- list.files("data/env/", recursive = T, 
-                                 pattern = "thetao_baseline",
-                                 full.names = T)
-        temp_layer <- temp_layer[grepl(hab_depth, temp_layer)]
-        temp_layer <- temp_layer[grepl("mean\\.tif$", temp_layer)]
-        temp_layer <- rast(temp_layer)
-        
-        if (ext(temp_layer) != ext(model_predictions[[1]])) {
-          temp_layer <- crop(temp_layer, model_predictions[[1]])
+        if ("sst" %in% post_eval) {
+          if (verb_1) cli::cli_inform(c(">" = "Performing SST post-evaluation"))
+          model_log <- .cm_posteval_sst(model_predictions, sp_data,
+                                        thresh_p10_mtp, algorithms, hab_depth,
+                                        good_models, model_log)
+        }
+        if ("niche" %in% post_eval) {
+          if (verb_1) cli::cli_inform(c(">" = "Performing niche post-evaluation (ecospat)"))
+          if (length(model_predictions) == length(good_models)) {
+            new_names <- algorithms[good_models]
+          } else {
+            new_names <- c(algorithms[good_models], "ensemble")
+          }
+
+          niche_eval <- try(lapply(1:length(model_predictions), function(id){
+            result <- .cm_posteval_nicheequiv(sp_data, model_predictions[[id]], env$layers,
+                                              iterations = 5, plot_example = F)
+            result$model <- new_names[id]
+            result
+          }), silent = T)
+          # We add this as the function is failing some times on the first run
+          if (inherits(niche_eval, "try-error")) {
+            niche_eval <- try(lapply(1:length(model_predictions), function(id){
+              result <- .cm_posteval_nicheequiv(sp_data, model_predictions[[id]], env$layers,
+                                                iterations = 5, plot_example = F,
+                                                extend.extent = c(-5, 5, -5, 5))
+              result$model <- new_names[id]
+              result
+            }), silent = T)
+          }
+          if (!inherits(niche_eval, "try-error")) {
+            niche_eval <- do.call("rbind", niche_eval)
+            arrow::write_parquet(niche_eval, paste0(metric_out,
+                                                    "taxonid=", species, "_model=", outacro,
+                                                    "_what=posteval_niche.parquet"))
+            niche_eval <- niche_eval %>% group_by(model) %>% summarise(across(1:(ncol(.)-1), function(x) mean(x,na.rm = T)))
+            model_log$model_posteval$niche <- as.data.frame(niche_eval[,1:3])
+            #rm(niche_eval)
+          } else {
+            warning("ecospat niche post-evaluation failed with status\n", niche_eval)
+          }
+        }
+        if ("hyper" %in% post_eval) {
+          if (verb_1) cli::cli_inform(c(">" = "Performing niche post-evaluation (hypervolume)"))
+          niche_eval <- try(lapply(1:length(model_predictions), .cm_posteval_hypervolume, 
+                                   var_imp = model_varimport,
+                                   model_predictions = model_predictions,
+                                   env_layers = env$layers,
+                                   sdm_data = sp_data, return_plot = F), silent = T)
+          if (sink.number() > 0) sink()
+          if (!inherits(niche_eval, "try-error")) {
+            niche_eval_status <- lapply(niche_eval, function(x) {
+              r <- x$overlap
+              names(r) <- paste0("hyperniche_", names(r))
+              data.frame(as.list(r))
+            })
+            niche_eval_status <- lapply(1:length(niche_eval_status), function(x) {
+              niche_eval_status[[x]]$model <- c(algorithms[good_models], "ensemble")[x]
+              niche_eval_status[[x]]
+            })
+            niche_eval_status <- do.call("rbind", niche_eval_status)
+            
+            # Add info to the log
+            model_log$model_posteval$hyperniche <- niche_eval_status
+            
+            # Save results
+            niche_eval_table <- lapply(1:length(model_predictions), function(x) {
+              salg <- c(algorithms[good_models], "ensemble")[x]
+              r <- niche_eval[[x]]$occupancy
+              r$model <- salg
+              r
+            })
+            
+            niche_eval_table <- dplyr::bind_rows(niche_eval_table)
+            niche_eval_table <- dplyr::relocate(niche_eval_table, "model", "occupancy", .before = "type")
+            
+            arrow::write_parquet(niche_eval_table, paste0(metric_out,
+                                             "taxonid=", species, "_model=", outacro,
+                                             "_what=posteval_hyperniche.parquet"))
+            rm(niche_eval, niche_eval_table)
+          } else {
+            warning("hyperniche post-evaluation failed with status\n", niche_eval)
+          }
         }
         
-        data_fit <- extract(temp_layer, 
-                            dplyr::bind_rows(sp_data$coord_training,
-                                             sp_data$coord_eval), ID = F)
-        
-        kd <- ks::kde(data_fit[,1], h = 8)
-        percentiles <- ks::qkde(c(0.01, 0.99), kd)
-        
-        masked <- temp_layer
-        masked[temp_layer >= percentiles[1] & temp_layer <= percentiles[2]] <- 3
-        masked[temp_layer < percentiles[1] | temp_layer > percentiles[2]] <- 0
-        
-        binary_maps <- lapply(1:length(model_predictions), function(x){
-          pred <- model_predictions[[x]]
-          pred[pred < thresh_p10_mtp[x,]$p10] <- 0
-          pred[pred > 0] <- 1
-          pred
-        })
-        
-        plot(masked)
-        plot(binary_maps[[1]])
-        
-        diff_maps <- lapply(binary_maps, function(x){
-          x + masked
-        })
-        
-        diff_perc <- lapply(diff_maps, function(x){
-          x[x == 0] <- NA
-          x[x == 3] <- NA
-          result <- as.data.frame(x)
-          result <- as.data.frame(table(result[,1]))
-          colnames(result) <- c("status", "frequency")
-          result$status <- ifelse(result$status == 1, "outside_tenv", "inside_tenv")
-          result$percentage <- round((result$frequency * 100) / sum(result$frequency), 2)
-          result
-        })
-        
-        trange_maps <- lapply(binary_maps, function(x){
-          x[x != 1] <- NA
-          x_pts <- as.data.frame(x, xy = T)[,1:2]
-          quantile(extract(temp_layer, x_pts, ID = F)[,1],
-                   c(0.01, 0.05, 0.5, 0.95, 0.99), na.rm = T)
-        })
-        
-        for (gm in 1:length(good_models)) {
-          salg <- algorithms[good_models[gm]]
-          model_log$model_posteval[[salg]] <- list(
-            thermal_range = quantile(data_fit[,1], c(0.01, 0.05, 0.5, 0.95, 0.99)),
-            thermal_range_binary = trange_maps[[gm]],
-            thermal_envelope = diff_perc[[gm]]
-          )
-        }
-        
-        # jacc <- function(raster1.bin, raster2.bin) {
-        #   combination <- sum(raster1.bin, raster2.bin, na.rm= T)
-        #   intersection <- combination == 2
-        #   
-        #   # Union is all the area covered by the both rasters
-        #   union <- combination >= 1
-        #   
-        #   union <- as.data.frame(union)
-        #   inter <- as.data.frame(intersection)
-        #   
-        #   length(inter[inter[,1],]) / length(union[union[,1],])
-        # }
-        # 
-        # overlap_metric <- jacc(masked, crop(binary_maps[[1]], masked))
-        # overlap_metric_b <- dismo::nicheOverlap(raster::raster(masked), raster::raster(crop(binary_maps[[1]], masked)))
-        # 
-        # 
-        # Test 4: niche overlap ecospat
+        treg <- obissdm::.get_time(treg, "Post-evaluation")
         
         
-        
-        # PART X: SAVE MODELS OBJECTS ----
-        if (verbose) cli::cli_alert_info("Saving models objects")
+        # PART 12: SAVE MODELS OBJECTS ----
+        if (verb_1) cli::cli_alert_info("Saving models objects")
         
         # Save metrics
         save_metrics <- lapply(good_models, function(id){
           model_name <- model_fits[[id]]$name
           
-          outpath <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/metrics/")
-          outfile <- paste0(outpath,
+          outfile <- paste0(metric_out,
                             "taxonid=", species, "_model=", outacro, "_method=", model_name)
           
-          write_parquet(model_fits[[id]]$cv_metrics, paste0(outfile, "_what=cvmetrics.parquet"))
+          arrow::write_parquet(model_fits[[id]]$cv_metrics, paste0(outfile, "_what=cvmetrics.parquet"))
           
           other_metrics <-  list(model_fits[[id]]$full_metrics,
-                                 NULL)#model_fits[[id]]$eval_metrics)
+                                 NULL)
+          if (!is.null(model_fits[[id]]$eval_metrics)) {
+            other_metrics[[2]] <- model_fits[[id]]$eval_metrics
+          }
           names(other_metrics) <- c("full", "eval")
           other_metrics <- dplyr::bind_rows(other_metrics, .id = "what")
           
-          write_parquet(other_metrics, paste0(outfile, "_what=fullmetrics.parquet"))
+          arrow::write_parquet(other_metrics, paste0(outfile, "_what=fullmetrics.parquet"))
         })
         
         # Update log with best parameters
@@ -898,13 +1032,15 @@ model_species <- function(species,
         })
         
         # Save fit points
-        write_parquet(sp_data$coord_training[sp_data$training$presence == 1,],
+        arrow::write_parquet(sp_data$coord_training[sp_data$training$presence == 1,],
                       paste0(outfolder, "/taxonid=", species, "/model=", outacro,
                              "/taxonid=", species, "_model=", outacro, "_",
                              "what=fitocc.parquet"))
         
+        treg <- as.data.frame(unclass(treg))
+        treg <- data.frame(what = row.names(treg), time_mins = treg[,1])
+        model_log$timings <- treg
         
-        # Save log and return object
         outpath <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/")
         outfile <- paste0(outpath,
                           "taxonid=", species, "_model=", outacro, "_what=log.json")
@@ -914,28 +1050,25 @@ model_species <- function(species,
         
         st_status <- "succeeded"
       } else {
-        if (verbose) cli::cli_alert_warning("No good model available")
+        if (verb_1) cli::cli_alert_warning("No good model available")
         st_status <- "no_good_model"
       }
       
     } else {
-      if (verbose) cli::cli_alert_warning("All models failed")
+      if (verb_1) cli::cli_alert_warning("All models failed")
       st_status <- "all_failed"
     }
     
   } else {
     if (nrow(species_data) < 15) {
-      if (verbose) cli::cli_alert_warning("Low number of points, failed")
-      # If data is low, annotate storr
+      if (verb_1) cli::cli_alert_warning("Low number of points, failed")
       st_status <- "low_data"
     } else {
-      if (verbose) cli::cli_alert_warning("No data available, failed")
-      # If data is not available, annotate storr
+      if (verb_1) cli::cli_alert_warning("No data available, failed")
       st_status <- "no_data"
     }
   }
   
-  # Return nothing, results are saved
   return(st_status)
   
 }
