@@ -71,7 +71,8 @@ get_env_data(datasets = datasets, future_scenarios = future_scenarios,
              time_steps = time_steps, variables = variables,
              terrain_vars = c(
                "bathymetry_mean", 
-               "slope"
+               "slope",
+               "terrain_ruggedness_index"
              ))
 
 # For just temperature, download also the range
@@ -92,4 +93,13 @@ to_rename <- to_rename[grepl("kdpar", to_rename)]
 new_names <- gsub("kdpar", "kd", to_rename)
 file.rename(to_rename, new_names)
 
+# Rename terrain_ruggedness
+to_rename <- list.files("data/env/terrain/", recursive = T, full.names = T)
+to_rename <- to_rename[grepl("rugg", to_rename)]
+to_rename <- to_rename[!grepl("aux", to_rename)]
+new_names <- gsub("terrain_ruggedness_index", "rugosity", to_rename)
+edit_r <- rast(to_rename)
+names(edit_r) <- "rugosity"
+writeRaster(edit_r, new_names, overwrite = T)
+fs::file_delete(to_rename)
 ### END

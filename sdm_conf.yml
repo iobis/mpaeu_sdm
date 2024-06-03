@@ -6,22 +6,17 @@
 # YAML files use the identation to establish list levels, so it's important to keep it consistent
 # Don't use tabulation, use 2 spaces instead.
 #
-# File version: 2 (2024-03-18)
+# File version: 3 (2024-06-03)
 ---
 # Fill here with the conditions to get the groups.
 # For example, the group photosynthesizers have to met the condition
 # kingdom == 'Chromista' | kingdom == 'Plantae'
 # For character, use single ''
 groups:
-  fishes: class == 'Elasmobranchii' | class == 'Teleostei'
-  photosynthesizers: kingdom == 'Chromista' | kingdom == 'Plantae'
   seabirds: class == 'Aves'
-  crustaceans: class %in% c('Copepoda', 'Malacostraca', 'Ostracoda', 'Thecostraca', 'Copepoda', 'Ichthyostraca', 'Tantulocarida', 'Thecostraca', 'Branchiopoda')
-  corals: order %in% c('Scleractinia', 'Corallimorpharia', 'Antipatharia', 'Scleralcyonacea', 'Zoantharia', 'Malacalcyonacea')
-  echinodermata: phylum == 'Echinodermata'
-  cetaceans: order == 'Cetartiodactyla'
-  mammals: class == 'Mammalia' & order != 'Cetartiodactyla'
-  others: kingdom != 'Chromista' & kingdom != 'Plantae' & class != 'Aves' & class != 'Elasmobranchii' & class != 'Teleostei'
+  photosynthesizers: kingdom == 'Chromista' | kingdom == 'Plantae'
+  mammals: class == 'Mammalia'
+  others: kingdom != 'Chromista' & kingdom != 'Plantae' & class != 'Aves' & class != 'Mammalia'
   
 # Put here the list of variables that will be used for each group
 # The order is variables (don't edit) > group name (should be equal to the previous section) > 'hypothesis' > list of variables
@@ -39,225 +34,104 @@ groups:
 #      - variable2_max
 #      - variable3_min
 variables:
+  seabirds:
+    basevars:
+      - tas_mean
+      - siconc_max
+      - thetao_mean
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+    coastal:
+      - tas_mean
+      - siconc_max
+      - thetao_mean
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+      - wavefetch
   photosynthesizers:
     basevars:
       - thetao_mean
-      - so_min
-      - po4_mean
-      - siconc_mean
+      - bathymetry_mean
+      - distcoast
       - sws_max
-      - par_mean
-    calcifiers:
-      - thetao_mean
       - so_min
-      - no3_mean
-      - siconc_mean
-      - sws_max
+      - o2_mean
       - par_mean
-      - ph_mean
     coastal:
       - thetao_mean
-      - so_min
-      - po4_mean
-      - siconc_mean
+      - bathymetry_mean
+      - distcoast
       - sws_max
+      - so_min
+      - o2_mean
       - par_mean
       - wavefetch
-  fishes:
-    basevars:
+      #- slope
+      - rugosity
+    complexity:
       - thetao_mean
-      - so_mean
-      - chl_mean
-      - o2_min
-      - sws_max
-    depthdep:
-      - thetao_mean
-      - so_mean
-      - chl_mean
-      - o2_min
-      - sws_max
       - bathymetry_mean
-    coastal:
-      - thetao_mean
-      - so_mean
-      - chl_mean
-      - o2_min
+      - distcoast
       - sws_max
-      - wavefetch
-    reef:
-      - thetao_mean
-      - so_mean
-      - chl_mean
-      - o2_min
-      - sws_max
-      - ph_mean
-      - si_max
-      - distestuary
-  seabirds:
-    basevars:
-      - thetao_mean
-      - so_mean
-      - siconc_max
-      - chl_mean
-      - distcoast
-    airtemp:
-      - so_mean
-      - siconc_max
-      - chl_mean
-      - distcoast
-      - tas_mean
-    totalphyto:
-      - thetao_mean
-      - so_mean
-      - siconc_max
-      - phyc_mean
-      - distcoast
-  cetaceans:
-    basevars:
-      - thetao_mean
-      - sws_mean
-      - mlotst_mean
-      - chl_mean
-      - kd_mean
-    coastdep:
-      - thetao_mean
-      - sws_mean
-      - mlotst_mean
-      - chl_mean
-      - kd_mean
-      - distcoast
-      - bathymetry_mean
-    seaice:
-      - sws_mean
-      - mlotst_mean
-      - chl_mean
-      - kd_mean
-      - siconc_max
-      - seaicedist_mean
+      - so_min
+      - o2_mean
+      - par_mean
+      #- slope
+      - rugosity
   mammals:
     basevars:
-      - thetao_max
-      - sws_mean
-      - slope
-      - chl_mean
-      - kd_mean
       - siconc_max
-      - seaicedist_mean
+      - thetao_mean
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+      - so_mean
     airtemp:
       - tas_min
-      - sws_mean
-      - slope
-      - chl_mean
-      - kd_mean
       - siconc_max
-      - seaicedist_mean
-  echinodermata:
-    basevars:
       - thetao_mean
-      - so_mean
-      - chl_mean
-      - ph_mean
       - bathymetry_mean
-    antartic:
-      - thetao_mean
+      - distcoast
+      - sws_max
       - so_mean
-      - chl_mean
-      - ph_mean
-      - bathymetry_mean
-      - siconc_max
     coastal:
-      - thetao_mean
-      - so_mean
-      - chl_mean
-      - ph_mean
-      - bathymetry_mean
-      - slope
-      - wavefetch
-  crustaceans:
-    basevars:
-      - thetao_mean
-      - so_mean
-      - chl_mean
-      - ph_mean
-      - sws_mean
-    antartic:
-      - thetao_max
-      - so_mean
-      - chl_mean
-      - ph_mean
-      - sws_mean
       - siconc_max
-    coastal:
       - thetao_mean
+      - bathymetry_mean
+      - distcoast
+      - sws_max
       - so_mean
-      - chl_mean
-      - ph_mean
-      - sws_mean
       - wavefetch
-    estuarine:
-      - thetao_mean
-      - so_mean
-      - chl_mean
-      - ph_mean
-      - sws_mean
-      - distestuary
-  corals:
-    basevars:
-      - thetao_max
-      - so_min
-      - chl_mean
-      - po4_mean
-      - ph_mean
-      - sws_mean
-      - bathymetry_mean
-    lightav:
-      - thetao_max
-      - so_min
-      - chl_mean
-      - ph_mean
-      - sws_mean
-      - si_mean
-      - par_mean
-      - bathymetry_mean
-    coldwater:
-      - thetao_mean
-      - so_min
-      - po4_mean
-      - ph_mean
-      - sws_mean
-      - bathymetry_mean
-      - slope
   others:
     basevars:
       - thetao_mean
       - thetao_range
-      - so_mean
-      - chl_mean
-      - ph_mean
       - bathymetry_mean
+      - distcoast
+      - sws_max
+      - so_mean
+      - o2_mean
     coastal:
       - thetao_mean
       - thetao_range
-      - so_mean
-      - chl_mean
-      - ph_mean
       - bathymetry_mean
-      - wavefetch
-    icedep:
-      - thetao_mean
-      - thetao_range
+      - distcoast
+      - sws_max
       - so_mean
-      - chl_mean
-      - ph_mean
-      - bathymetry_mean
-      - siconc_max
-    oxygendep:
-      - thetao_mean
-      - thetao_range
-      - so_mean
-      - chl_mean
-      - ph_mean
-      - bathymetry_mean
       - o2_mean
-
+      - wavefetch
+      - rugosity
+      #- slope
+    complexity:
+      - thetao_mean
+      - thetao_range
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+      - so_mean
+      - o2_mean
+      - rugosity
+      #- slope
 # END of configuration file
