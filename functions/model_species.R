@@ -143,8 +143,8 @@ model_species <- function(species,
     env <- .cm_check_coastal(species_data, env, coord_names, verb_2)
     
     
-    # Load ecoregions shapefile
-    ecoregions <- vect("data/shapefiles/MarineRealms.shp")
+    # Load Realms shapefile (we call ecoregions for convenience)
+    ecoregions <- vect("data/shapefiles/MarineRealms_BO.shp")
     
     # Split the dataset
     fit_pts <- split_ds(species_data)
@@ -218,12 +218,12 @@ model_species <- function(species,
     ),]
     model_log$model_details$ecoregions_included <- unique(ecoreg_sel$Realm)
 
-    # Apply a buffer to ensure that all areas are covered
+    # # Apply a buffer to ensure that all areas are covered
     sf::sf_use_s2(FALSE)
     ecoreg_sel <- suppressMessages(
-      suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(ecoreg_sel), 0.5)))
+      suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(terra::aggregate(ecoreg_sel)), 0.02)))
     )
-    # TODO: correct ecoregions layer for the central america area
+    ecoreg_sel <- terra::crop(ecoreg_sel, terra::ext(-180, 180, -90, 90))
 
     ####
     
@@ -245,11 +245,11 @@ model_species <- function(species,
       bath[bath < bath_range[1] | bath > bath_range[2]] <- NA
       
       if ("coastal" %in% names(env$hypothesis)) {
-        bath <- crop(bath, europe_starea)
-        env$layers <- mask(crop(env$layers, ecoreg_sel), bath)
-        env$layers <- mask(env$layers, env$layers$wavefetch)
+        bath <- terra::crop(bath, europe_starea)
+        env$layers <- terra::mask(terra::crop(env$layers, ecoreg_sel), bath)
+        env$layers <- terra::mask(env$layers, env$layers$wavefetch)
       } else {
-        env$layers <- mask(crop(env$layers, ecoreg_sel), bath)
+        env$layers <- terra::mask(terra::crop(env$layers, ecoreg_sel), bath)
       }
       
       model_log$model_details$limited_by_depth <- TRUE
@@ -257,10 +257,10 @@ model_species <- function(species,
       
     } else {
       if ("coastal" %in% names(env$hypothesis)) {
-        ecoreg_sel <- crop(ecoreg_sel, europe_starea)
-        env$layers <- mask(env$layers, ecoreg_sel)
+        ecoreg_sel <- terra::crop(ecoreg_sel, europe_starea)
+        env$layers <- terra::mask(env$layers, ecoreg_sel)
       } else {
-        env$layers <- mask(env$layers, ecoreg_sel)
+        env$layers <- terra::mask(env$layers, ecoreg_sel)
       }
     }
     
@@ -270,7 +270,7 @@ model_species <- function(species,
     #                                       plot_result = FALSE,
     #                                       verbose = verbose))
     fit_pts_sac <- try(obissdm::outqc_sac_mantel(fit_pts, 
-                                                 env_layers = subset(env$layers, env$hypothesis[[1]]),
+                                                 env_layers = terra::subset(env$layers, env$hypothesis[[1]]),
                                                  plot_result = FALSE,
                                                  verbose = verb_2))
     
@@ -279,8 +279,12 @@ model_species <- function(species,
     } 
     
     # Make data object
-    quad_n <- ifelse(nrow(as.data.frame(env$layers, xy = T, na.rm = T)) < quad_samp,
-                     round(nrow(as.data.frame(env$layers, xy = T, na.rm = T))), quad_samp)
+    env_size_t <- nrow(as.data.frame(env$layers, xy = T, na.rm = T))
+    if (quad_samp < 1 && quad_samp > 0) {
+      quad_samp <- round(env_size_t * quad_samp)
+      if (quad_samp < 10000) quad_samp <- 10000
+    }
+    quad_n <- ifelse(env_size_t < quad_samp, round(nenv_size_t), quad_samp)
     model_log$model_details$background_size <- quad_n 
     
     sp_data <- mp_prepare_data(fit_pts_sac, eval_data = eval_pts,
@@ -335,7 +339,6 @@ model_species <- function(species,
                         "_what=biasmetrics.rds")
       saveRDS(list(k_stat = spat_env_k, l_stat = spat_env_l),
               file = outfile)
-      # TODO: check if it is saved correct and if plot need to be saved
       
       if (correct_bias) {
         # TODO: Add bias correction method
@@ -470,7 +473,7 @@ model_species <- function(species,
           )
           # Reduced for testings
           # scenarios <- data.frame(scenario = c("current", "ssp126"), year = c(NA,"dec50"))
-          # scenarios <- data.frame(scenario = c("current"), year = c(NA))
+          scenarios <- data.frame(scenario = c("current"), year = c(NA))
           
           for (k in 1:nrow(scenarios)) {
             
@@ -575,7 +578,6 @@ model_species <- function(species,
                   rm(dof, shape_plot)
                 }
                 
-                #shape_res <- shape_res * 100
                 shape_res <- aggregate(shape_res, fact = 12)
                 shape_res <- as.int(shape_res)
                 names(shape_res) <- paste0(scenarios$scenario[k], ifelse(is.null(period), "", paste0("_", period)))
@@ -620,9 +622,9 @@ model_species <- function(species,
                             "taxonid=", species, "_model=", outacro, "_method=", model_name,
                             "_what=respcurves.parquet")
           
-          # TODO: Include fit_range or not on the resp_curves FUN
           rcurves <- resp_curves(model_fits[[id]],
-                                 subset(env$layers, multi_mod_max$best_variables))
+                                 subset(env$layers, multi_mod_max$best_variables),
+                                 sdm_data = sp_data)
           
           arrow::write_parquet(rcurves, outfile)
           
@@ -708,8 +710,10 @@ model_species <- function(species,
             outens <- paste0(pred_out, 
                              "taxonid=", species, "_model=", outacro, "_method=ensemble_scen=", gsub("_$", "", to_ensemble_g[un]), ".tif")
             
+            ensemble_mean <- as.int(ensemble_mean)
+            ensemble_cv <- as.int(ensemble_cv)
             writeRaster(c(ensemble_mean, ensemble_cv), outens,
-                        overwrite = T)
+                        overwrite = T, datatype = "INT1U")
             res_ens <- cogeo_optim(outens)
             rm(ensemble, ensemble_mean, ensemble_cv)
           }
@@ -811,7 +815,11 @@ model_species <- function(species,
           ens_resp <- apply(init_data[,startsWith(colnames(init_data), "resp")], 1, "median")
           ens_resp_sd <- apply(init_data[,startsWith(colnames(init_data), "resp")], 1, "sd")
           
-          ens_resp_curves <- cbind(init_data[,c("variable", "base")], response = ens_resp, response_sd = ens_resp_sd)
+          if ("in_range" %in% colnames(init_data)) {
+            ens_resp_curves <- cbind(init_data[,c("variable", "base", "in_range")], response = ens_resp, response_sd = ens_resp_sd)
+          } else {
+            ens_resp_curves <- cbind(init_data[,c("variable", "base")], response = ens_resp, response_sd = ens_resp_sd)
+          }
           
           outfile <- paste0(metric_out,
                             "taxonid=", species, "_model=", outacro, "_method=ensemble",
@@ -880,12 +888,29 @@ model_species <- function(species,
         fit_mask <- terra::extend(env$layers[[1]], model_predictions[[1]])
         fit_mask[!is.na(fit_mask)] <- 1
         
-        masks <- c(ecoreg_occ_mask, ecoreg_mask, fit_mask)
-        names(masks) <- c("native_ecoregions", "fit_ecoregions", "fit_region")
+        # Convex hull mask
+        conv_hull <- terra::convHull(terra::vect(sp_data$coord_training[sp_data$training$presence == 1,],
+                                                 geom = coord_names, crs = "EPSG:4326"))
+        conv_hull_mask <- mask(base_layer, conv_hull)
+        
+        minb_circle <- terra::minCircle(terra::vect(sp_data$coord_training[sp_data$training$presence == 1,],
+                                                 geom = coord_names, crs = "EPSG:4326"))
+        minb_circle_mask <- mask(base_layer, minb_circle)
+        
+        # Buffer mask
+        buff_pts <-  terra::buffer(terra::vect(sp_data$coord_training[sp_data$training$presence == 1,],
+                                                   geom = coord_names, crs = "EPSG:4326"),
+                                    width = 100000)
+        buff_pts_mask <- mask(base_layer, buff_pts)
+        
+        masks <- c(ecoreg_occ_mask, ecoreg_mask, fit_mask, conv_hull_mask, minb_circle_mask, buff_pts_mask)
+        names(masks) <- c("native_ecoregions", "fit_ecoregions", "fit_region",
+                          "convex_hull", "minbounding_circle", "buffer100m")
+        masks <- as.int(masks)
         
         outmask <- paste0(pred_out, 
                           "taxonid=", species, "_model=", outacro, "_mask.tif")
-        terra::writeRaster(masks, outmask, overwrite = T)
+        terra::writeRaster(masks, outmask, overwrite = T, datatype = "INT1U")
         mask_opt <- cogeo_optim(outmask)
         if (file.exists(paste0(outmask, ".aux.json"))) fs::file_delete(paste0(outmask, ".aux.json"))
         

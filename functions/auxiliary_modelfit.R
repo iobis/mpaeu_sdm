@@ -1,44 +1,65 @@
 # Internal functions - to document
 
-# Convert eco info to habitat depth
-hab_to_depth <- function(hab, default = "depthsurf") {
+# Retrieve any object from the results
+retrieve <- function(species, what, acro = NULL, results_folder = "results/",
+                     load = TRUE) {
   
-  if (grepl("benthic|demersal|bottom", hab)) {
-    dstrata <- "depthmean"
-  } else if (grepl("pelagic_surface", hab)) {
-    dstrata <- "depthsurf"
-  } else if (grepl("NOT_FOUND", hab)) {
-    dstrata <- default
+  all_f <- list.files(results_folder)
+  
+  all_f <- all_f[grepl(species, all_f)]
+  
+  if (length(all_f) < 1) {
+    stop("No folder found for that species.")
+  }
+  
+  all_files <- list.files(paste0(results_folder, "/", all_f), full.names = T)
+  
+  if (!is.null(acro)) {
+    all_files <- all_files[grepl(acro, all_files)]
+    if (length(all_files) < 1) {
+      stop("No folder found for this acronym.")
+    }
   } else {
-    dstrata <- "depthsurf"
+    folders_info <- fs::dir_info(paste0(results_folder, "/", all_f))
+    all_files <- unlist(folders_info[which.max(folders_info$modification_time), "path"])
   }
   
-  return(dstrata)
-}
-
-# Split dataset into eval and fit
-split_ds <- function(sp_occ,
-                          what = "fit",
-                          only_coords = TRUE) {
+  all_files <- list.files(all_files, recursive = T, full.names = T)
   
-  if (grepl("fit", what)) {
-    to_get <- "fit_points"
-  } else if (grepl("eval", what)) {
-    to_get <- "eval_points"
+  if (length(all_files) < 1) {
+    stop("Directory is empty.")
+  }
+  
+  sel_file <- all_files[grepl(what, all_files)]
+  
+  if (length(files) > 1) {
+    if (interactive()) {
+      print(sel_file)
+      chose <- as.numeric(readline("Which file you want?  "))
+      if (!chose %in% 1:length(sel_file)) {
+        cat("File must be one of the available. Supply a number!\n")
+        chose <- as.numeric(readline("Which file you want?  "))
+      }
+    } else {
+      cat("Multiple files, returning the first.\n")
+      chose <- 1
+    }
+    sel_file <- sel_file[chose]
+  }
+  
+  
+  if (load) {
+    result <- switch (tools::file_ext(sel_file),
+                      parquet = arrow::read_parquet(sel_file),
+                      tif = terra::rast(sel_file),
+                      shp = terra::vect(sel_file),
+                      csv = read.csv(sel_file),
+                      rds = readRDS(sel_file),
+                      {cat("Impossible to load file with extension", tools::file_ext(sel_file), "\n");NULL}
+    )
   } else {
-    stop("What should be one of `fit_points` or `eval_points`")
+    result <- sel_file
   }
   
-  pts <- sp_occ %>%
-    filter(data_type == to_get) %>%
-    as.data.frame()
-  
-  if (nrow(pts) == 0) {
-    pts <- NULL
-  } else if (only_coords) {
-    pts <- pts[,c("decimalLongitude", "decimalLatitude")]
-  }
-  
-  return(pts)
 }
-
+  

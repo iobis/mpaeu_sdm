@@ -47,8 +47,7 @@ datasets <- c(
 )
 
 datasets <- c(datasets,
-              gsub("depthsurf", "depthmean", datasets),
-              gsub("depthsurf", "depthmax", datasets))
+              gsub("depthsurf", "depthmean", datasets))
 
 
 # List scenarios to download ----
@@ -98,8 +97,8 @@ to_rename <- list.files("data/env/terrain/", recursive = T, full.names = T)
 to_rename <- to_rename[grepl("rugg", to_rename)]
 to_rename <- to_rename[!grepl("aux", to_rename)]
 new_names <- gsub("terrain_ruggedness_index", "rugosity", to_rename)
-edit_r <- rast(to_rename)
+edit_r <- terra::rast(to_rename)
 names(edit_r) <- "rugosity"
-writeRaster(edit_r, new_names, overwrite = T)
+terra::writeRaster(edit_r, new_names, overwrite = T)
 fs::file_delete(to_rename)
 ### END
