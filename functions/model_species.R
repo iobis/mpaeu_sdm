@@ -280,7 +280,7 @@ model_species <- function(species,
     
     # Make data object
     env_size_t <- nrow(as.data.frame(env$layers, xy = T, na.rm = T))
-    if (quad_samp < 1 && quad_samp > 0) {
+    if (quad_samp <= 1 && quad_samp > 0) {
       quad_samp <- round(env_size_t * quad_samp)
       if (quad_samp < 10000) quad_samp <- 10000
     }
@@ -473,7 +473,7 @@ model_species <- function(species,
           )
           # Reduced for testings
           # scenarios <- data.frame(scenario = c("current", "ssp126"), year = c(NA,"dec50"))
-          scenarios <- data.frame(scenario = c("current"), year = c(NA))
+          # scenarios <- data.frame(scenario = c("current"), year = c(NA))
           
           for (k in 1:nrow(scenarios)) {
             
