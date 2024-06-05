@@ -39,28 +39,30 @@
   
   if ("coastal" %in% names(env$hypothesis)) {
     # Test if is within europe/coastal
-    europe_starea <- vect("data/shapefiles/mpa_europe_starea_v2.shp")
-    europe_starea <- ext(europe_starea)
+    europe_starea <- terra::vect("data/shapefiles/mpa_europe_starea_v2.shp")
+    europe_starea <- terra::ext(europe_starea)
     
-    is_within <- is.related(vect(species_data[,coord_names], geom = coord_names),
+    is_within <- terra::is.related(terra::vect(species_data[,coord_names], geom = coord_names),
                             europe_starea, "intersects")
     if (!all(is_within)) {
       env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
-      env$layers <- subset(env$layers, "wavefetch", negate = T)
+      env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
       if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded")
     } else {
       
-      wave <- rast("data/env/terrain/wavefetch.tif")
-      wave_pts <- extract(wave, species_data[,coord_names])
+      wave <- terra::rast("data/env/terrain/wavefetch.tif")
+      wave_pts <- terra::extract(wave, species_data[,coord_names])
       
       if (sum(is.na(wave_pts[,2])) > ceiling(nrow(species_data) * .05)) {
         env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
+        env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
         if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded")
       } else if ((nrow(species_data) - sum(is.na(wave_pts[,2]))) < 15) {
         env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
+        env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
         if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded")
       } else {
-        env$layers <- crop(env$layers, europe_starea)
+        env$layers <- terra::crop(env$layers, europe_starea)
       }
     }
   }

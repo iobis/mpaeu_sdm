@@ -96,6 +96,10 @@ model_species <- function(species,
   model_log$group <- group
   model_log$model_acro <- outacro
   model_log$model_date <- Sys.Date()
+  if (!is.null(algo_opts)) {
+    algo_opts_nams <- names(algo_opts)
+    for (opt in algo_opts_nams) model_log$algorithms_parameters[[opt]] <- algo_opts[[opt]]
+  }
   
   # Define output paths
   metric_out <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/metrics/")
@@ -245,6 +249,7 @@ model_species <- function(species,
       bath[bath < bath_range[1] | bath > bath_range[2]] <- NA
       
       if ("coastal" %in% names(env$hypothesis)) {
+        europe_starea <- terra::vect("data/shapefiles/mpa_europe_starea_v2.shp")
         bath <- terra::crop(bath, europe_starea)
         env$layers <- terra::mask(terra::crop(env$layers, ecoreg_sel), bath)
         env$layers <- terra::mask(env$layers, env$layers$wavefetch)
@@ -257,6 +262,7 @@ model_species <- function(species,
       
     } else {
       if ("coastal" %in% names(env$hypothesis)) {
+        europe_starea <- terra::vect("data/shapefiles/mpa_europe_starea_v2.shp")
         ecoreg_sel <- terra::crop(ecoreg_sel, europe_starea)
         env$layers <- terra::mask(env$layers, ecoreg_sel)
       } else {
@@ -284,7 +290,7 @@ model_species <- function(species,
       quad_samp <- round(env_size_t * quad_samp)
       if (quad_samp < 10000) quad_samp <- 10000
     }
-    quad_n <- ifelse(env_size_t < quad_samp, round(nenv_size_t), quad_samp)
+    quad_n <- ifelse(env_size_t < quad_samp, round(env_size_t), quad_samp)
     model_log$model_details$background_size <- quad_n 
     
     sp_data <- mp_prepare_data(fit_pts_sac, eval_data = eval_pts,
@@ -304,6 +310,10 @@ model_species <- function(species,
                                  retry_if_zero = TRUE,
                                  manual_shp = block_grid,
                                  verbose = verb_2)
+    
+    if (any(table(sp_data$training$presence, sp_data$blocks$folds[["spatial_grid"]])[2,] == 0)) {
+      stop("Blocks with less than 1 point. Failed.")
+    }
     
     model_log$model_details$block_size <- unname(sp_data$blocks$grid_resolution)
     model_log$model_fit_points <- sum(sp_data$training$presence)

@@ -8,6 +8,7 @@
 
 
 # Load packages ----
+cli::cat_line(cli::col_cyan("Loading packages"))
 library(obissdm)
 library(furrr)
 library(progressr)
@@ -17,10 +18,12 @@ library(arrow)
 library(dplyr)
 library(terra)
 source("functions/model_species.R")
+source("functions/components_model_species.R")
 source("functions/auxiliary_modelfit.R")
 set.seed(2023)
 handlers("cli")
 options("progressr.enable" = TRUE)
+if (interactive()) { cat("\014") } else { system("clear") }
 
 
 # Define settings ----
@@ -45,14 +48,14 @@ check_exists <- function(object_name, if_not) {
 # The output folder
 outfolder <- check_exists("outfolder", "results")
 # An unique code for identifying this model run
-outacro <- check_exists("outacro", "wwf")
+outacro <- check_exists("outacro", "inteval")
 # What will be modelled?
 # 'all' will model all species. Supply a vector of AphiaIDs to filter
 sel_species <- check_exists("sel_species", "all") 
 # The path for the species data dataset
 species_dataset <- "data/species/"
 # The path for the species list
-species_list <- "analysis/wwf_2024/wwf_list.csv"#"data/all_splist_20240319.csv"
+species_list <- "data/all_splist_20240319.csv"
 # Run in parallel? For avoiding parallel, change both to FALSE
 run_parallel <- ifelse(length(sel_species) > 1 | sel_species == "all", TRUE, FALSE)[1]
 # Number of cores for parallel processing
@@ -60,15 +63,21 @@ n_cores <- 4
 
 # Modelling
 # Algorithms to be used
-algos <- c("maxent", "rf", "brt", "lasso", "xgboost")
+algos <- c("maxent", "rf", "glm", "xgboost")
+# Personalized options
+algo_opts <- obissdm::sdm_options()[algos]
+algo_opts$maxent$features <- c("lq", "lqh")
+algo_opts$glm$method <- "iwlr"
 # Should areas be masked by the species depth?
 limit_by_depth <- TRUE
 # A buffer to be applied to the depth limitation
 depth_buffer <- 500
 # Assess spatial bias?
-assess_bias <- FALSE
+assess_bias <- TRUE
 # Try to correct spatial bias?
 correct_bias <- FALSE
+# Quadrature size
+quad_samp <- 0.1 # 10% of the total number of points
 
 # Create storr to hold results
 st <- storr_rds(paste0(outacro, "_storr"))
@@ -121,12 +130,24 @@ cli::cat_rule()
 
 # Fit models ----
 # Create a function to save results in a storr object for better control
-pmod <- function(sp, gp, sdat, outf, outac, alg, lmd, lmd_buf, assb, corb, p) {
+pmod <- function(species,
+                 group,
+                 species_dataset,
+                 outfolder,
+                 outacro,
+                 algorithms,
+                 algo_opts = NULL,
+                 limit_by_depth,
+                 depth_buffer,
+                 assess_bias,
+                 correct_bias, 
+                 quad_samp,
+                 p) {
   
   p()
   
-  if (st$exists(sp)) {
-    if (st$get(as.character(sp))[[1]] %in% c("done", "succeeded", "low_data",
+  if (st$exists(species)) {
+    if (st$get(as.character(species))[[1]] %in% c("done", "succeeded", "low_data",
                                              "failed", "no_good_model")) {
       to_do <- FALSE
     } else {
@@ -137,24 +158,31 @@ pmod <- function(sp, gp, sdat, outf, outac, alg, lmd, lmd_buf, assb, corb, p) {
   }
   
   if (to_do) {
-    st$set(sp, "running")
+    st$set(species, "running")
     
-    fit_result <- try(model_species(species = sp,
-                                    group = gp,
-                                    species_dataset = sdat,
-                                    outfolder = outf,
-                                    outacro = outac,
-                                    algorithms = alg,
-                                    limit_by_depth = lmd,
-                                    depth_buffer = lmd_buf,
-                                    assess_bias = assb,
-                                    correct_bias = corb),
-                      silent = T)
+    fit_result <- try(model_species(
+      species = species,
+      group = group,
+      species_dataset = species_dataset,
+      outfolder = outfolder,
+      outacro = outacro,
+      algorithms = algos,
+      algo_opts = algo_opts,
+      limit_by_depth = limit_by_depth,
+      depth_buffer = depth_buffer,
+      assess_bias = assess_bias,
+      correct_bias = correct_bias,
+      post_eval = c("sst", "niche", "hyper"),
+      tg_metrics = "cbi",
+      tg_threshold = 0.3,
+      quad_samp = quad_samp,
+      verbose = FALSE
+    ), silent = T)
     
     if (!inherits(fit_result, "try-error")) {
-      st$set(sp, fit_result)
+      st$set(species, fit_result)
     } else {
-      st$set(sp, list(status = "failed",
+      st$set(species, list(status = "failed",
                       error = fit_result))
     }
   }
@@ -169,20 +197,32 @@ if (run_parallel) {
   with_progress({
     p <- progressor(steps = nrow(species_list))
     result <- future_map2(species_list$taxonID, species_list$sdm_group, pmod,
-                          sdat = species_dataset, outf = outfolder,
-                          outac = outacro, alg = algos, lmd = limit_by_depth,
-                          lmd_buf = depth_buffer, assb = assess_bias,
-                          corb = correct_bias,
+                          species_dataset = species_dataset,
+                          outfolder = outfolder,
+                          outacro = outacro,
+                          algorithms = algos,
+                          algo_opts = algo_opts,
+                          limit_by_depth = limit_by_depth,
+                          depth_buffer = depth_buffer,
+                          assess_bias = assess_bias,
+                          correct_bias = correct_bias,
+                          quad_samp = quad_samp,
                           p = p, .options = furrr_options(seed = T))
   })
 } else {
   with_progress({
     p <- progressor(steps = nrow(species_list))
     result <- purrr::map2(species_list$taxonID, species_list$sdm_group, pmod,
-                          sdat = species_dataset, outf = outfolder,
-                          outac = outacro, alg = algos, lmd = limit_by_depth,
-                          lmd_buf = depth_buffer, assb = assess_bias,
-                          corb = correct_bias,
+                          species_dataset = species_dataset,
+                          outfolder = outfolder,
+                          outacro = outacro,
+                          algorithms = algorithms,
+                          algo_opts = algo_opts,
+                          limit_by_depth = limit_by_depth,
+                          depth_buffer = depth_buffer,
+                          assess_bias = assess_bias,
+                          correct_bias = correct_bias,
+                          quad_samp = quad_samp,
                           p = p)
   })
 }
@@ -192,5 +232,10 @@ if (run_parallel) {
 # Check results ----
 # Check if everything was processed
 cli::cli_alert_warning("{.val {length(st$list())}} out of {.val {nrow(species_list)}} model{?s} processed.")
+
+# Save session info
+fs::dir_create("data/log")
+writeLines(capture.output(devtools::session_info()),
+           paste0("data/log/", outacro, "_sessioninfo.txt"))
 
 # And if so, destroy storr object

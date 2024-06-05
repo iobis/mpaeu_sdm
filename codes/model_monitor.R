@@ -1,5 +1,5 @@
 library(storr)
-outacro <- "wwf"
+outacro <- "inteval"
 st <- storr_rds(paste0(outacro, "_storr"))
 
 cli::cli_h1("Monitoring model {cli::bg_cyan(outacro)}")
