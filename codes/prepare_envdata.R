@@ -14,11 +14,12 @@ set.seed(2023)
 # Prepare layers
 clip_area <- ext(-41, 47, 20, 89)
 
-mregions <- mregions::mr_shp("MarineRegions:iho")
-mask_area <- mregions[mregions$name %in% c("Red Sea", "Gulf of Aqaba", "Gulf of Suez"),]
+# mregions <- mregions::mr_shp("MarineRegions:iho")
+# mask_area <- mregions[mregions$name %in% c("Red Sea", "Gulf of Aqaba", "Gulf of Suez"),]
+mask_area <- vect("data/shapefiles/mpa_europe_starea_v2.shp")
 
 groups <- names(get_conf(what = "groups")$groups)
-depth_env <- c("depthsurf", "depthmean", "depthmax")
+depth_env <- c("depthsurf", "depthmean")
 
 test_grid <- expand.grid(groups, depth_env, stringsAsFactors = F)
 
@@ -29,11 +30,17 @@ vif_step_list <- list()
 for (i in 1:nrow(test_grid)) {
   env_layers <- get_envofgroup(group = test_grid[i, 1],
                                depth = test_grid[i, 2],
+                               load_all = T,
                                verbose = TRUE)
   
-  env_layers <- crop(env_layers, clip_area)
+  nams <- unique(unlist(env_layers$hypothesis))
+  nams <- nams[!grepl("wavefetch", nams)]
   
-  env_layers <- mask(env_layers, mask_area, inverse = T)
+  env_layers <- terra::subset(env_layers$layers, nams)
+  
+  # env_layers <- crop(env_layers, mask_area)
+  # 
+  # env_layers <- mask(env_layers, mask_area, inverse = T)
   
   vif_step_list[[i]] <- usdm::vifstep(env_layers, th = 5)
 }
@@ -61,11 +68,17 @@ vif_list <- list()
 for (i in to_check) {
   env_layers <- get_envofgroup(group = test_grid[i, 1],
                                depth = test_grid[i, 2],
+                               load_all = T,
                                verbose = FALSE)
   
-  env_layers <- crop(env_layers, clip_area)
+  nams <- unique(unlist(env_layers$hypothesis))
+  nams <- nams[!grepl("wavefetch", nams)]
   
-  env_layers <- mask(env_layers, mask_area, inverse = T)
+  env_layers <- terra::subset(env_layers$layers, nams)
+  
+  # env_layers <- crop(env_layers, clip_area)
+  # 
+  # env_layers <- mask(env_layers, mask_area, inverse = T)
   
   vif_list[[i]] <- usdm::vif(env_layers)
 }
@@ -79,7 +92,11 @@ for (i in to_check) {
 
 
 # The problem is, in general, between thetao-* and some other variable
-# We will try to remove those suggested by VIF step or keep if temperature
+# The high correlation between SST and air temperature was expected.
+# However, because patterns change specially close to the poles, we will keep both
+
+# We will now try to resolve the problem between rugosity and slope
+
 # To open the doc:
 # rstudioapi::documentOpen("sdm_conf.yml")
 
@@ -88,11 +105,17 @@ for (i in to_check) {
 for (i in to_check) {
   env_layers <- get_envofgroup(group = test_grid[i, 1],
                                depth = test_grid[i, 2],
+                               load_all = T,
                                verbose = FALSE)
   
-  env_layers <- crop(env_layers, clip_area)
+  nams <- unique(unlist(env_layers$hypothesis))
+  nams <- nams[!grepl("wavefetch", nams)]
   
-  env_layers <- mask(env_layers, mask_area, inverse = T)
+  env_layers <- terra::subset(env_layers$layers, nams)
+  
+  # env_layers <- crop(env_layers, clip_area)
+  # 
+  # env_layers <- mask(env_layers, mask_area, inverse = T)
   
   vif_list[[i]] <- usdm::vif(env_layers)
 }
@@ -106,22 +129,27 @@ for (i in to_check) {
 
 # Temperature still have a high VIF. This is expected, temperature is usually
 # strongly correlated with other variables.
-env_layers <- get_envofgroup(group = test_grid[2, 1],
-                             depth = test_grid[2, 2],
+env_layers <- get_envofgroup(group = test_grid[1, 1],
+                             depth = test_grid[1, 2],
+                             load_all = T,
                              verbose = T)
 
-env_layers <- crop(env_layers, clip_area)
+nams <- unique(unlist(env_layers$hypothesis))
+nams <- nams[!grepl("wavefetch", nams)]
+nams <- nams[!grepl("tas_mean", nams)] # Remove just for testing
 
-env_layers <- mask(env_layers, mask_area, inverse = T)
+env_layers <- terra::subset(env_layers$layers, nams)
 
+usdm::vif(env_layers)
 check_res <- usdm::vifcor(env_layers)
 check_res@corMatrix
 
 # However, SST is an essential variable. We then keep this variable and the remaining for this first run.
+# We will also keep O2 and PAR, although they are causing some problems with the VIF
 
 # We save the results
 names(vif_step_list) <- paste0(test_grid[,1], "_", test_grid[,2])
-names(vif_list) <- names(vif_step_list)[1:11]
+names(vif_list) <- names(vif_step_list)[min(to_check):max(to_check)]
 all_results <- list(
   vif_before = vif_step_list,
   vif_after = vif_list[-which(sapply(vif_list, is.null))]

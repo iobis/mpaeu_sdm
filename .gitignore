@@ -49,14 +49,7 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 
-data/raw/
-data/species/
-data/env/
-data/distances/
-data/log/_log*
-data/iucn/
-data/virtual_species/
-data/virtual_species_oldversion/
+data/
 _species_info/
 sdmrun/
 sdmrun_b/
@@ -66,3 +59,10 @@ datastd/
 results/
 temp_files/
 codes/drafts/
+suppinfo/
+analysis/internal_eval_2024
+temp/
+
+# Large/temporary files
+*_storr/
+*.zarr

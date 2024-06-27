@@ -6,17 +6,18 @@
 # YAML files use the identation to establish list levels, so it's important to keep it consistent
 # Don't use tabulation, use 2 spaces instead.
 #
-# File version: 1 (2023-10-11)
+# File version: 3 (2024-06-03)
 ---
 # Fill here with the conditions to get the groups.
 # For example, the group photosynthesizers have to met the condition
 # kingdom == 'Chromista' | kingdom == 'Plantae'
 # For character, use single ''
 groups:
-  fishes: class == 'Elasmobranchii' | class == 'Teleostei'
-  photosynthesizers: kingdom == 'Chromista' | kingdom == 'Plantae'
-  others: kingdom != 'Chromista' & kingdom != 'Plantae' & class != 'Aves' & class != 'Elasmobranchii' & class != 'Teleostei'
   seabirds: class == 'Aves'
+  photosynthesizers: kingdom == 'Chromista' | kingdom == 'Plantae'
+  mammals: class == 'Mammalia'
+  others: kingdom != 'Chromista' & kingdom != 'Plantae' & class != 'Aves' & class != 'Mammalia'
+  
 # Put here the list of variables that will be used for each group
 # The order is variables (don't edit) > group name (should be equal to the previous section) > 'hypothesis' > list of variables
 # setting an hypothesis ("name of hypothesis") is useful if you want to test multiple variables settings
@@ -33,68 +34,104 @@ groups:
 #      - variable2_max
 #      - variable3_min
 variables:
-  fishes:
-    basevars:
-      - thetao_mean
-      - thetao_range
-      - so_mean
-      - siconc_max # surface only
-      - chl_mean
-      #- o2_mean # removed after VIF
-      - sws_max
-      - bathymetry
-      #-distcoast
-  photosynthesizers:
-    basevars:
-      - thetao_max
-      - so_mean
-      - siconc_max # surface only
-      - kdpar_mean 
-      #- par_mean # Temporalily removed because there are problems with the file on BO
-      - dfe_mean
-      - no3_mean
-      - po4_mean
-      - bathymetry
-      #- distcoast
-  others:
-    basevars:
-      - thetao_max
-      - so_mean
-      - ph_mean
-      - siconc_max # surface only
-      - chl_mean
-      #- o2_mean # removed after VIF
-      - no3_mean
-      - kdpar_mean 
-      - sws_max
-      - bathymetry
-      #-distcoast
   seabirds:
     basevars:
       - tas_mean
-      - siconc_mean # surface only
-      - phyc_mean
-      #- par_mean # Temporalily removed because there are problems with the file on BO
-      - dfe_mean
-      - no3_mean
-      - po4_mean
-      #-distcoast
-# Cross-validation block sizes
-# Block size assessed using the package blockCV
-# See the code get_block_size.R for more info
-blocksizes:
-  depthsurf:
-    fishes: 2160.94
-    photosynthesizers: 3655.58
-    others: 3086.8
-    seabirds: 3703.82
-  depthmean:
-    fishes: 2213.16
-    photosynthesizers: 4901.08
-    others: 2341.01
-    seabirds: 4872.68
-  depthmax:
-    fishes: 1975.08
-    photosynthesizers: 6179.94
-    others: 2362.84
-    seabirds: 3302.59
+      - siconc_max
+      - thetao_mean
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+    coastal:
+      - tas_mean
+      - siconc_max
+      - thetao_mean
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+      - wavefetch
+  photosynthesizers:
+    basevars:
+      - thetao_mean
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+      - so_min
+      - o2_mean
+      - par_mean
+    coastal:
+      - thetao_mean
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+      - so_min
+      - o2_mean
+      - par_mean
+      - wavefetch
+      #- slope
+      - rugosity
+    complexity:
+      - thetao_mean
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+      - so_min
+      - o2_mean
+      - par_mean
+      #- slope
+      - rugosity
+  mammals:
+    basevars:
+      - siconc_max
+      - thetao_mean
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+      - so_mean
+    airtemp:
+      - tas_min
+      - siconc_max
+      - thetao_mean
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+      - so_mean
+    coastal:
+      - siconc_max
+      - thetao_mean
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+      - so_mean
+      - wavefetch
+  others:
+    basevars:
+      - thetao_mean
+      - thetao_range
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+      - so_mean
+      - o2_mean
+    coastal:
+      - thetao_mean
+      - thetao_range
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+      - so_mean
+      - o2_mean
+      - wavefetch
+      - rugosity
+      #- slope
+    complexity:
+      - thetao_mean
+      - thetao_range
+      - bathymetry_mean
+      - distcoast
+      - sws_max
+      - so_mean
+      - o2_mean
+      - rugosity
+      #- slope
+# END of configuration file

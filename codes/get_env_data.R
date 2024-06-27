@@ -26,6 +26,7 @@
 #devtools::install_github("bio-oracle/biooracler")
 library(obissdm)
 
+
 # List datasets to download ----
 datasets <- c(
   "thetao_baseline_2000_2019_depthsurf",
@@ -38,18 +39,20 @@ datasets <- c(
   "siconc_baseline_2000_2020_depthsurf",
   "o2_baseline_2000_2018_depthsurf",
   "KDPAR_mean_baseline_2000_2020_depthsurf",
-  "dfe_baseline_2000_2018_depthsurf",
   "no3_baseline_2000_2018_depthsurf",
   "chl_baseline_2000_2018_depthsurf",
-  "tas_baseline_2000_2020_depthsurf"
+  "tas_baseline_2000_2020_depthsurf",
+  "si_baseline_2000_2018_depthsurf",
+  "mlotst_baseline_2000_2019_depthsurf"
 )
 
 datasets <- c(datasets,
-              gsub("depthsurf", "depthmean", datasets),
-              gsub("depthsurf", "depthmax", datasets))
+              gsub("depthsurf", "depthmean", datasets))
+
 
 # List scenarios to download ----
 future_scenarios <- c("ssp126", "ssp245", "ssp370", "ssp460", "ssp585")
+
 
 # Define time steps ----
 time_steps <- list(
@@ -65,9 +68,37 @@ variables <- c("min", "mean", "max")
 
 get_env_data(datasets = datasets, future_scenarios = future_scenarios,
              time_steps = time_steps, variables = variables,
-             terrain_vars = "bathymetry_mean")
+             terrain_vars = c(
+               "bathymetry_mean", 
+               "slope",
+               "terrain_ruggedness_index"
+             ))
 
 # For just temperature, download also the range
 get_env_data(datasets = "thetao_baseline_2000_2019_depthsurf",
              future_scenarios = future_scenarios,
              time_steps = time_steps, variables = c("range"))
+
+# For Chlorophyll-a we remove the depthmean and depthmax, as for the future is
+# not available
+to_remove <- list.files("data/env/current", full.names = T)
+to_remove <- to_remove[grepl("chl", to_remove)]
+to_remove <- to_remove[grepl("depthmean|depthmax", to_remove)]
+fs::file_delete(to_remove)
+
+# Rename KDPAR for kd
+to_rename <- list.files("data/env", recursive = T, full.names = T)
+to_rename <- to_rename[grepl("kdpar", to_rename)]
+new_names <- gsub("kdpar", "kd", to_rename)
+file.rename(to_rename, new_names)
+
+# Rename terrain_ruggedness
+to_rename <- list.files("data/env/terrain/", recursive = T, full.names = T)
+to_rename <- to_rename[grepl("rugg", to_rename)]
+to_rename <- to_rename[!grepl("aux", to_rename)]
+new_names <- gsub("terrain_ruggedness_index", "rugosity", to_rename)
+edit_r <- terra::rast(to_rename)
+names(edit_r) <- "rugosity"
+terra::writeRaster(edit_r, new_names, overwrite = T)
+fs::file_delete(to_rename)
+### END
