@@ -60,9 +60,8 @@ results/
 temp_files/
 codes/drafts/
 suppinfo/
-/snapshot
-snapshot/
 analysis/internal_eval_2024
+temp/
 
 # Large/temporary files
 *_storr/

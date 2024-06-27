@@ -65,7 +65,7 @@ model_species <- function(species,
                           assess_bias = TRUE,
                           correct_bias = TRUE,
                           post_eval = c("sst", "niche", "hyper"),
-                          tg_metrics = "cbi",
+                          tg_metric = "cbi",
                           tg_threshold = 0.3,
                           quad_samp = 50000,
                           verbose = FALSE) {
@@ -153,6 +153,7 @@ model_species <- function(species,
     # Split the dataset
     fit_pts <- split_ds(species_data)
     eval_pts <- split_ds(species_data, "eval")
+    model_log$n_init_points <- nrow(fit_pts)
     
     treg <- obissdm::.get_time(treg, "Data loading")
     
@@ -361,6 +362,7 @@ model_species <- function(species,
     if (verb_1) cli::cli_alert_info("Model selection")
     multi_mod_max <- sdm_multhypo(sdm_data = sp_data, sdm_method = "maxent",
                                   variables = env$hypothesis,
+                                  options = algo_opts[["maxent"]],
                                   verbose = verb_2)
     
     model_log$model_details$hypothesis_tested <- env$hypothesis
@@ -439,10 +441,10 @@ model_species <- function(species,
         if (!is.null(model)) {
           cv_res <- model$cv_metrics
           cv_res <- apply(cv_res, 2, mean, na.rm = T)
-          the_metric <- cv_res[[tg_metrics]]
+          the_metric <- cv_res[[tg_metric]]
           if (!is.na(the_metric)) {
             if (the_metric >= tg_threshold) {
-              if (sum(is.na(model$cv_metrics[[tg_metrics]])) >= 4) {
+              if (sum(is.na(model$cv_metrics[[tg_metric]])) >= 4) {
                 return(FALSE)
               } else {
                 return(TRUE)
@@ -617,6 +619,10 @@ model_species <- function(species,
         })
         
         treg <- obissdm::.get_time(treg, "Model prediction")
+        
+        model_log$model_good <- algorithms[good_models]
+        model_log$model_good_metric <- tg_metric
+        model_log$model_good_threshold <- tg_threshold
         
         
         
@@ -914,8 +920,13 @@ model_species <- function(species,
         buff_pts_mask <- mask(base_layer, buff_pts)
         
         masks <- c(ecoreg_occ_mask, ecoreg_mask, fit_mask, conv_hull_mask, minb_circle_mask, buff_pts_mask)
+        
+        base_layer[!is.na(base_layer)] <- 0
+        
+        masks <- mask(base_layer, masks, updatevalue = 1, inverse = T)
         names(masks) <- c("native_ecoregions", "fit_ecoregions", "fit_region",
                           "convex_hull", "minbounding_circle", "buffer100m")
+        
         masks <- as.int(masks)
         
         outmask <- paste0(pred_out, 

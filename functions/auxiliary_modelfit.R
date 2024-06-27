@@ -2,7 +2,11 @@
 
 # Retrieve any object from the results
 retrieve <- function(species, what, acro = NULL, results_folder = "results/",
-                     load = TRUE) {
+                     load = TRUE, return_all = FALSE) {
+  
+  if (return_all) {
+    load <- FALSE
+  }
   
   all_f <- list.files(results_folder)
   
@@ -32,24 +36,26 @@ retrieve <- function(species, what, acro = NULL, results_folder = "results/",
   
   sel_file <- all_files[grepl(what, all_files)]
   
-  if (length(files) > 1) {
-    if (interactive()) {
-      print(sel_file)
-      chose <- as.numeric(readline("Which file you want?  "))
-      if (!chose %in% 1:length(sel_file)) {
-        cat("File must be one of the available. Supply a number!\n")
+  if (length(sel_file) > 1) {
+    if (!return_all) {
+      if (interactive()) {
+        print(sel_file)
         chose <- as.numeric(readline("Which file you want?  "))
+        if (!chose %in% 1:length(sel_file)) {
+          cat("File must be one of the available. Supply a number!\n")
+          chose <- as.numeric(readline("Which file you want?  "))
+        }
+      } else {
+        cat("Multiple files, returning the first.\n")
+        chose <- 1
       }
-    } else {
-      cat("Multiple files, returning the first.\n")
-      chose <- 1
+      sel_file <- sel_file[chose]
     }
-    sel_file <- sel_file[chose]
   }
   
   
   if (load) {
-    result <- switch (tools::file_ext(sel_file),
+    result <- switch (tools::file_ext(sel_file[1]),
                       parquet = arrow::read_parquet(sel_file),
                       tif = terra::rast(sel_file),
                       shp = terra::vect(sel_file),

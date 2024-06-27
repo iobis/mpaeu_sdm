@@ -8,7 +8,8 @@
 
 
 # Load packages ----
-cli::cat_line(cli::col_cyan("Loading packages"))
+cli::cat_line(cli::col_cyan("This is `obissdm` version ", packageVersion("obissdm"),
+                            ". Loading packages..."))
 library(obissdm)
 library(furrr)
 library(progressr)

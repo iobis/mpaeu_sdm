@@ -430,6 +430,8 @@
       thermal_range_binary = trange_maps[[gm]],
       thermal_envelope = diff_perc[[gm]]
     )
+    names(model_log$model_posteval[[salg]]$thermal_range) <- c("q_0.01", "q_0.05", "q_0.5", "q_0.95", "q_0.99")
+    names(model_log$model_posteval[[salg]]$thermal_range_binary) <- c("q_0.01", "q_0.05", "q_0.5", "q_0.95", "q_0.99")
   }
   
   return(model_log)
