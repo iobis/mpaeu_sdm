@@ -63,6 +63,7 @@ suppinfo/
 analysis/internal_eval_2024
 temp/
 codes/drafts/
+virtualsp/
 
 # Large/temporary files
 *_storr/
