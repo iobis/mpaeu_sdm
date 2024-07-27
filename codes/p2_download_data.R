@@ -19,8 +19,9 @@ source("codes/get_species_lists_grid.R")
 source("codes/get_species_data_full.R")
 
 #> Step 3: Download environmental data
-#> This will download environmental data from Bio-ORACLE
+#> This will download environmental data from Bio-ORACLE and prepare other files
 source("codes/get_env_data.R")
+source("codes/get_add_env_data.R")
 
 #> Step 5: Get habitat information
 #> Obtain habitat information from WoRMS, SeaLifeBase and FishBase

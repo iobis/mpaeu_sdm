@@ -40,13 +40,22 @@ id_batches <- split(species$AphiaID, ceiling(seq_along(species$AphiaID) / 50))
 taxa_batches <- purrr::map(id_batches, worrms::wm_record, .progress = T)
 
 species_list <- bind_rows(taxa_batches) %>% 
-    select(AphiaID, scientificname, phylum, class, order, family, genus, scientificName = scientificname, rank, authority)
+    select(AphiaID, scientificname, kingdom, phylum, class, order, family, genus, scientificName = scientificname, rank, authority,
+    status, valid_AphiaID, valid_name, isMarine, isBrackish, isTerrestrial, isFreshwater)
 
 species_list <- species_list %>%
     filter(rank == "Species") %>%
-    distinct(AphiaID, .keep_all = T)
+    distinct(AphiaID, .keep_all = T) %>%
+    filter(!kingdom %in% c("Archaea", "Bacteria", "Fungi", "Protozoa", "Viruses", "Biota incertae sedis")) %>%
+    filter(!is.na(isMarine) | !is.na(isBrackish) | !is.na(isTerrestrial) | !is.na(isFreshwater)) %>%
+    mutate(isFreshwater = ifelse(is.na(isFreshwater), 0, isFreshwater)) %>%
+    rowwise() %>%
+    mutate(isAnyMBT = ifelse(all(is.na(c(isBrackish, isTerrestrial, isMarine))), 0,
+                                    ifelse(sum(na.omit(c(isBrackish, isTerrestrial, isMarine))) > 0, 1, 0))) %>%
+    filter(isAnyMBT == 1 | isFreshwater == 0)
 
 head(species_list)
+nrow(species_list)
 length(unique(species_list$AphiaID))
 
 # Join OBIS/GBIF information
@@ -70,9 +79,12 @@ gbif_keys <- gbif_keys %>%
     select(usageKey, gbif_scientificName = canonicalName, gbif_speciesKey = usageKey)
 
 species_list_final <- bind_cols(species_list_or, gbif_keys) %>%
-    select(-authority, -rank) %>%
-    filter(!is.na(AphiaID), !is.na(scientificName))
+    select(-rank)
 head(species_list_final)
+
+# Add taxonID for compatibility with other parts
+species_list_final <- species_list_final %>%
+    mutate(taxonID = AphiaID)
 
 # Save final list
 write.csv(species_list_final, 

@@ -65,7 +65,9 @@ req_packages <- c(
   "lightgbm",
   "leaflet",
   "sys",
-  "jsonlite"
+  "jsonlite",
+  "gbifdb",
+  "minioclient"
 )
 
 # Needed packages on GitHub
@@ -104,6 +106,9 @@ if (!is_polar_inst) {
   Sys.setenv(NOT_CRAN = "true")
   install.packages("polars", repos = "https://rpolars.r-universe.dev")
 }
+
+# Install minioclient
+minioclient::install_mc(force = TRUE)
 
 # Install Python packages
 system("pip install rio-cogeo xarray")
