@@ -13,6 +13,7 @@ req_packages <- c(
   "arrow",
   "dplyr",
   "terra",
+  "stars",
   "cli",
   "fs",
   "purrr",

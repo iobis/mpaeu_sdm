@@ -26,7 +26,7 @@ mp_get_ecoinfo(
 # Input with genus info
 hab_info <- read.csv("data/species_ecoinfo.csv")
 species_list <- species_list %>% 
-    select(taxonID, family, genus, scientificName)
+    select(taxonID, phylum, order, class, family, genus, scientificName)
 hab_info <- left_join(hab_info, species_list)
 
 genus <- unique(hab_info$genus)
@@ -55,24 +55,29 @@ for (i in cli::cli_progress_along(genus)) {
     
     if (nrow(gen_i) > 0) {
         if (length(unique(gen_i$mode_life)) > 1) {
-            hab_info$flag[hab_info$genus == g] <- 2
+            hab_info$flag[hab_info$genus == g & hab_info$mode_life == "NOT_FOUND"] <- 2
         } else {
             major <- gen_i$mode_life[1]
-            hab_info$flag[hab_info$genus == g] <- 1
+            hab_info$flag[hab_info$genus == g & hab_info$mode_life == "NOT_FOUND"] <- 1
             hab_info$mode_life[hab_info$genus == g & hab_info$mode_life == "NOT_FOUND"] <- as.character(major)
         }
     } else {
-        hab_info$flag[hab_info$genus == g] <- 3
+        hab_info$flag[hab_info$genus == g & hab_info$mode_life == "NOT_FOUND"] <- 3
     }
 }
 
 table(hab_info$flag)
 View(hab_info[hab_info$flag == 2,])
 
+# Try to input by family
+# Flags: 
+# 0 = found in databases
+# 10 = input by family resolved
+# 20 = multiple modes of life in the family, not possible to resolve
+# 30 = family info not available
 
-
-
-
+hab_info_no_family <- hab_info[is.na(hab_info$family),]
+hab_info <- hab_info[!is.na(hab_info$family),]
 
 families <- unique(hab_info$family)
 
@@ -81,14 +86,8 @@ family_info <- hab_info %>%
     group_by(family, mode_life) %>%
     count()
 
-
-hab_info$flag <- 0
-
-hab_info_no_family <- hab_info[is.na(hab_info$family),]
-hab_info <- hab_info[!is.na(hab_info$family),]
-
-for (f in families) {
-    cat("Processing", f, "\n")
+for (i in cli::cli_progress_along(families)) {
+    f <- families[i]
     fam_i <- family_info %>%
         filter(family == f) %>%
         mutate(mode_life = case_when(
@@ -98,27 +97,27 @@ for (f in families) {
     
     if (nrow(fam_i) > 0) {
         if (length(unique(fam_i$mode_life)) > 1) {
-            if (length(unique(fam_i$n)) > 1) {
-                major <- fam_i[which.max(fam_i$n),"mode_life"]
-                hab_info$flag[hab_info$family == f] <- 2
-                hab_info$mode_life[hab_info$family == f & hab_info$mode_life == "NOT_FOUND"] <- as.character(major)
-            } else {
-                hab_info$flag[hab_info$family == f] <- 3
-            }
+            hab_info$flag[hab_info$family == f & hab_info$mode_life == "NOT_FOUND"] <- 
+                hab_info$flag[hab_info$family == f & hab_info$mode_life == "NOT_FOUND"] + 20
         } else {
             major <- fam_i$mode_life[1]
-            hab_info$flag[hab_info$family == f] <- 1
+            hab_info$flag[hab_info$family == f & hab_info$mode_life == "NOT_FOUND"] <- 
+                hab_info$flag[hab_info$family == f & hab_info$mode_life == "NOT_FOUND"] + 10
             hab_info$mode_life[hab_info$family == f & hab_info$mode_life == "NOT_FOUND"] <- as.character(major)
         }
     } else {
-        hab_info$flag[hab_info$family == f] <- 4
+        hab_info$flag[hab_info$family == f & hab_info$mode_life == "NOT_FOUND"] <- 
+            hab_info$flag[hab_info$family == f & hab_info$mode_life == "NOT_FOUND"] + 30
     }
 }
 
-# If family not available, try genus
+hab_info <- bind_rows(hab_info, hab_info_no_family)
 
+table(hab_info$flag)
 
-hab_info <- hab_info %>%
-filter(taxonID %in% species_list$taxonID)
+done <- sum(hab_info$flag == 0 | hab_info$flag == 1 | hab_info$flag == 13)
+100 - (done * 100)/nrow(hab_info)
 
-
+# Save new file
+write.csv(hab_info[,c("taxonID", "mode_life", "flag")],
+    "data/species_ecoinfo.csv", row.names = F)
