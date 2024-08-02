@@ -25,6 +25,7 @@ set.seed(2023)
 handlers("cli")
 options("progressr.enable" = TRUE)
 if (interactive()) { cat("\014") } else { system("clear") }
+start_time <- Sys.time()
 
 
 # Define settings ----
@@ -49,14 +50,14 @@ check_exists <- function(object_name, if_not) {
 # The output folder
 outfolder <- check_exists("outfolder", "results")
 # An unique code for identifying this model run
-outacro <- check_exists("outacro", "inteval")
+outacro <- check_exists("outacro", "mpaeu")
 # What will be modelled?
 # 'all' will model all species. Supply a vector of AphiaIDs to filter
-sel_species <- check_exists("sel_species", "all") 
+sel_species <- check_exists("sel_species", "all")
 # The path for the species data dataset
 species_dataset <- "data/species/"
 # The path for the species list
-species_list <- "data/all_splist_20240319.csv"
+species_list <- recent_file("data", "all_splist")
 # Run in parallel? For avoiding parallel, change both to FALSE
 run_parallel <- ifelse(length(sel_species) > 1 | sel_species == "all", TRUE, FALSE)[1]
 # Number of cores for parallel processing
@@ -64,11 +65,10 @@ n_cores <- 4
 
 # Modelling
 # Algorithms to be used
-algos <- c("maxent", "rf", "glm", "xgboost")
+algos <- c("maxent", "gam", "rf", "xgboost")
 # Personalized options
 algo_opts <- obissdm::sdm_options()[algos]
-algo_opts$maxent$features <- c("lq", "lqh")
-algo_opts$glm$method <- "iwlr"
+algo_opts$gam$method <- "iwlr"
 # Should areas be masked by the species depth?
 limit_by_depth <- TRUE
 # A buffer to be applied to the depth limitation
@@ -76,7 +76,7 @@ depth_buffer <- 500
 # Assess spatial bias?
 assess_bias <- TRUE
 # Try to correct spatial bias?
-correct_bias <- FALSE
+correct_bias <- TRUE
 # Quadrature size
 quad_samp <- 0.1 # 10% of the total number of points
 
@@ -141,7 +141,7 @@ pmod <- function(species,
                  limit_by_depth,
                  depth_buffer,
                  assess_bias,
-                 correct_bias, 
+                 correct_bias,
                  quad_samp,
                  p) {
   
@@ -232,11 +232,23 @@ if (run_parallel) {
 
 # Check results ----
 # Check if everything was processed
-cli::cli_alert_warning("{.val {length(st$list())}} out of {.val {nrow(species_list)}} model{?s} processed.")
+sp_done <- st$list()
+sp_done <- length(sp_done[sp_done %in% species_list$taxonID])
+cli::cli_alert_warning("{.val {}} out of {.val {nrow(species_list)}} model{?s} processed.")
 
 # Save session info
 fs::dir_create("data/log")
-writeLines(capture.output(devtools::session_info()),
-           paste0("data/log/", outacro, "_sessioninfo.txt"))
+writeLines(c(capture.output(devtools::session_info()),
+             capture.output(
+              glue::glue(""),
+              glue::glue("Model fitting information"),
+              glue::glue("Acronym: {outacro}"),
+              glue::glue("Start time: {start_time}"),
+              glue::glue("End time: {Sys.time()}"),
+              glue::glue("Number of species: {nrow(species_list)}"),
+              glue::glue("Number of species processed: {sp_done}"),
+              glue::glue("obissdm version: {packageVersion('obissdm')}")
+             )),
+           paste0("data/log/", outacro, "_", format(Sys.time(), "%Y%m%d_%H%M%S"), "_sessioninfo.txt"))
 
 # And if so, destroy storr object

@@ -112,4 +112,4 @@ if (!is_polar_inst) {
 minioclient::install_mc(force = TRUE)
 
 # Install Python packages
-system("pip install rio-cogeo xarray")
+reticulate::py_install(c("rio-cogeo", "xarray", "zarr"), pip = TRUE)

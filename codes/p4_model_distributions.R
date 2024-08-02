@@ -8,6 +8,6 @@
 
 #> Step 1: Fit models and predict distributions
 #> Will run models in parallel
-source("codes/get_species_lists_v2.R")
+source("codes/model_fit.R")
 
 # END

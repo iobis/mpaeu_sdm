@@ -8,77 +8,57 @@
 
 # Previous step: see `get_species_data.R`
 
-# Open packages ----
-library(duckdb)
-library(arrow)
-library(dplyr)
+# Load packages ----
+library(obissdm)
+library(terra)
 library(storr)
 library(furrr)
-
-
-# Settings ----
-shared <- "../mpaeu_shared/"
-
-obis_dataset <- paste0(shared, "obis_20231025.parquet")
-gbif_dataset <- paste0(shared, "gbif_20231025.parquet")
-
-# Create database
-db_file <- "data/species_qc.db"
-con <- dbConnect(RSQLite::SQLite(), dbname = db_file)
+destroy_st <- FALSE
 
 # Create storr
 st <- storr_rds("qc_storr")
 
-
-# Load data ----
-obis_pq <- open_dataset(obis_dataset) %>%
-  select(all_of()) %>%
-  filter() %>%
-  to_duckdb()
-
-gbif_pq <- open_dataset(gbif_dataset) %>%
-  to_duckdb()
-
-obis_list <- read.csv("data/obis_splist_20230720.csv")
-gbif_list <- read.csv("data/gbif_splist_20231023.csv")
-
-full_list <- bind_rows(gbif_list,
-                       obis_list %>% rename(AphiaID = taxonID))
-
-full_list <- full_list %>% distinct(AphiaID, .keep_all = T)
-
+# Open target species list
+sp_list_p <- recent_file("data", "all_splist")
+species_list <- read.csv(sp_list_p)
 
 # Run QC in parallel ----
-plan(multisession, workers = 5)
+plan(multisession, workers = 3) # Need to be multisession, otherwise crashes
 
-future_map(1:nrow(full_list), function(id){
+proc_res <- future_map(1:nrow(species_list), function(id){
   
-  obis_id <- full_list$AphiaID[id]
-  gbif_id <- full_list$gbif_taxonKey[id]
+  sp <- species_list$taxonID[id]
   
-  obis_data <- obis_pq %>%
-    filter(AphiaID == obis_id) %>%
-    collect()
-  
-  if (!is.na(gbif_id)) {
-    gbif_data <- gbif_pq %>%
-      filter(AphiaID == gbif_id) %>%
-      collect() # TODO: Rename any column needed!!!!!!
+  if (!st$exists(sp)) {
+    
+    res <- try(mp_standardize(species = sp,
+                              sdm_base = terra::rast("data/env/current/thetao_baseline_depthsurf_mean.tif"),
+                              species_list = sp_list_p,
+                              species_folder = "data/raw/"))
+    
+    if (!inherits(res, "try-error")) {
+      st$set(sp, "done")
+      to_return <- "done"
+    } else {
+      to_return <- list("failed", res)
+    }
   } else {
-    gbif_data <- NULL
-  }
-  
-  full_data <- bind_rows(obis_data, gbif_data)
-  
-  std_data <- obissdm::mp_standardize(full_data)
-  
-  if (!is.null(std_data)) {
-    st$set(id, std_data)
-    to_return <- "done"
-  } else {
-    to_return <- "failed"
+    to_return <- "already_done"
   }
   
   return(to_return)
   
 }, .progress = T)
+
+# Check if everything was done
+if (length(species_list$taxonID[!species_list$taxonID %in% as.numeric(st$list())]) > 0) {
+  stop("Not all species were processed. Check.")
+} else {
+  cli::cli_alert_success("All species processed.")
+  if (destroy_st) {
+    # Destroy st
+    st$destroy()
+  }
+}
+
+### END
