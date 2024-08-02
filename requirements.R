@@ -38,7 +38,6 @@ req_packages <- c(
   "yaml",
   "glue",
   "virtualspecies",
-  "biooracler",
   "lubridate",
   "geohashTools",
   "rfishbase",
@@ -72,12 +71,13 @@ req_packages <- c(
 )
 
 # Needed packages on GitHub
-git_packages <- c("flexsdm", "prg", "obissdm", "obistools")
+git_packages <- c("flexsdm", "prg", "obissdm", "obistools", "biooracler")
 git_packages_source <- c(
   "sjevelazco/flexsdm@HEAD",
   "meeliskull/prg/R_package/prg",
   "iobis/mpaeu_msdm",
-  "iobis/obistools"
+  "iobis/obistools",
+  "bio-oracle/biooracler"
 )
 
 # Packages with special installation

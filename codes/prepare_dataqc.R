@@ -22,11 +22,18 @@ st <- storr_rds("qc_storr")
 sp_list_p <- recent_file("data", "all_splist")
 species_list <- read.csv(sp_list_p)
 
+priority <- read.csv("../mpaeu_constatus/v4/MPAEU_D3_4_threatened_species_fulltaxonomy.csv")
+priority <- priority$valid_AphiaID
+priority <- priority[!is.na(priority)]
+species_list <- species_list[species_list$AphiaID %in% priority,]
+
 # Run QC in parallel ----
-plan(multisession, workers = 3) # Need to be multisession, otherwise crashes
+plan(multisession, workers = 5) # Need to be multisession, otherwise crashes
 
 proc_res <- future_map(1:nrow(species_list), function(id){
   
+  require(terra)
+
   sp <- species_list$taxonID[id]
   
   if (!st$exists(sp)) {
@@ -41,6 +48,7 @@ proc_res <- future_map(1:nrow(species_list), function(id){
       to_return <- "done"
     } else {
       to_return <- list("failed", res)
+      st$set(sp, to_return)
     }
   } else {
     to_return <- "already_done"
