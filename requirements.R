@@ -47,7 +47,6 @@ req_packages <- c(
   "duckdb",
   "blockCV",
   "rnaturalearth",
-  "obistools",
   "isotree",
   "reticulate",
   "sp",

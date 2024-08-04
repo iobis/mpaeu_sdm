@@ -6,17 +6,24 @@
 #
 ####################### P2. Download necessary data ############################
 
+# Force data retrieve if already existing?
+force <- FALSE
+
 #> Step 1: Obtain species list
 #> Two ways of downloading species lists are available. Since June 2024 we are
 #> applying the version 2, that uses the OBIS gridded product
 # For the previous version, see `get_species_lists.R`
-source("codes/get_species_lists_grid.R")
+if (force | !any(grepl("all_splist", list.files("data")))) {
+    source("codes/get_species_lists_grid.R")
+}
 
 #> Step 2: Download species data
 #> This will download species data from OBIS and GBIF
 # By default, for OBIS it will download the full export. 
 # An alternative option is to download just the subset. See `get_species_data.R`
-source("codes/get_species_data_full.R")
+if (force | !any(grepl("obis", list.files("data/raw"))) | !any(grepl("gbif", list.files("data/raw")))) {
+    source("codes/get_species_data_full.R")
+}
 
 #> Step 3: Download environmental data
 #> This will download environmental data from Bio-ORACLE and prepare other files
