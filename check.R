@@ -25,7 +25,7 @@ warnings <- 0
 # Check that folder structure is consistent
 de <- lapply(c("data", "functions", "codes"), function(x) dir.exists(x))
 if (!all(unlist(de))) {
-  mes("Main folders not available. Check if running from world directory and if GitHub repo was correctly cloned.", danger = T)
+  mes("Main folders not available. Check if running from root directory and if GitHub repo was correctly cloned.", danger = T)
   dangers <- dangers + 1
 } else {
   mes("Main folders available")

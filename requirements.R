@@ -67,7 +67,8 @@ req_packages <- c(
   "sys",
   "jsonlite",
   "gbifdb",
-  "minioclient"
+  "minioclient",
+  "BiocManager"
 )
 
 # Needed packages on GitHub
@@ -79,6 +80,9 @@ git_packages_source <- c(
   "iobis/obistools",
   "bio-oracle/biooracler"
 )
+
+# Bioconductor packages
+bioc_packages <- c("Rarr")
 
 # Packages with special installation
 special_packages <- "polars"
@@ -99,6 +103,13 @@ for (i in 1:length(req_packages)) {
 for (i in 1:length(git_packages)) {
   if (!is_package_installed(git_packages[i])) {
     devtools::install_github(git_packages_source[i])
+  }
+}
+
+# Check bioconductor packages
+for (i in 1:length(bioc_packages)) {
+  if (!is_package_installed(bioc_packages[i])) {
+    BiocManager::install(bioc_packages[i])
   }
 }
 

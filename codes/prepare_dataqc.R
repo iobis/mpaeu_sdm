@@ -28,7 +28,7 @@ priority <- priority[!is.na(priority)]
 species_list <- species_list[species_list$AphiaID %in% priority,]
 
 # Run QC in parallel ----
-plan(multisession, workers = 5) # Need to be multisession, otherwise crashes
+plan(multisession, workers = 3) # Need to be multisession, otherwise crashes
 
 proc_res <- future_map(1:nrow(species_list), function(id){
   
@@ -41,7 +41,8 @@ proc_res <- future_map(1:nrow(species_list), function(id){
     res <- try(mp_standardize(species = sp,
                               sdm_base = terra::rast("data/env/current/thetao_baseline_depthsurf_mean.tif"),
                               species_list = sp_list_p,
-                              species_folder = "data/raw/"))
+                              species_folder = "data/raw/",
+                              reader = "arrow"))
     
     if (!inherits(res, "try-error")) {
       st$set(sp, "done")

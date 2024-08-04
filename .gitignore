@@ -68,3 +68,5 @@ virtualsp/
 # Large/temporary files
 *_storr/
 *.zarr
+
+_packbundle.R
