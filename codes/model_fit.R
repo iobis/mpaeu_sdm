@@ -69,6 +69,8 @@ algos <- c("maxent", "gam", "rf", "xgboost")
 # Personalized options
 algo_opts <- obissdm::sdm_options()[algos]
 algo_opts$gam$method <- "iwlr"
+algo_opts$rf$n_trees <- c(500, 1000)
+algo_opts$xgboost$rounds <- c(10, 100)
 # Should areas be masked by the species depth?
 limit_by_depth <- TRUE
 # A buffer to be applied to the depth limitation
