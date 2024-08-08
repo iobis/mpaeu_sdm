@@ -24,8 +24,6 @@
 #'   TRUE`. Can be 0 to apply no buffer (not recommended)
 #' @param assess_bias if `TRUE`, perform tests for potential spatial bias on
 #'   occurrence records
-#' @param correct_bias if `TRUE`, apply a bias layer to try to correct the
-#'   spatial bias
 #' @param verbose if `TRUE` print essential messages. Can also be numeric: 0 for
 #'   no messages, 1 for progress messages and 2 for all messages.
 #'
@@ -63,7 +61,6 @@ model_species <- function(species,
                           limit_by_depth = TRUE,
                           depth_buffer = 500,
                           assess_bias = TRUE,
-                          correct_bias = TRUE,
                           post_eval = c("sst", "niche", "hyper"),
                           tg_metric = "cbi",
                           tg_threshold = 0.3,
@@ -161,42 +158,6 @@ model_species <- function(species,
     
     # PART 2: DATA PREPARING ----
     if (verb_1) cli::cli_alert_info("Preparing data")
-    # # Check which eco-regions are covered by the points
-    # ecoreg_unique <- ecoregions$Realm[is.related(ecoregions,
-    #                                              vect(bind_rows(fit_pts, eval_pts), 
-    #                                                   geom = coord_names), 
-    #                                              "intersects")]
-    # 
-    # model_log$model_details$ecoregions <- ecoreg_unique
-    # ecoreg_occ <- ecoregions[ecoregions$Realm %in% ecoreg_unique,]
-    # 
-    # # Apply a buffer to ensure that all areas are covered
-    # sf::sf_use_s2(FALSE)
-    # ecoreg_occ_buff <- suppressMessages(
-    #   suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(ecoreg_occ), 0.2)))
-    # )
-    # 
-    # adj_ecoreg <- ecoregions$Realm[is.related(ecoregions, ecoreg_occ_buff,
-    #                                           "intersects")]
-    # 
-    # # Mask areas
-    # ecoreg_sel <- ecoregions[ecoregions$Realm %in% unique(
-    #   c(ecoreg_unique, adj_ecoreg)
-    # ),]
-    # model_log$model_details$ecoregions_included <- unique(ecoreg_sel$Realm)
-    # 
-    # # Apply a buffer to ensure that all areas are covered
-    # sf::sf_use_s2(FALSE)
-    # ecoreg_sel <- suppressMessages(
-    #   suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(ecoreg_sel), 0.5)))
-    # )
-    # 
-    # # Limit to max extension based on distance to the points
-    # max_ext <- ext(vect(rbind(fit_pts, eval_pts), geom = coord_names))
-    # max_ext <- ext(as.vector(max_ext) + c(-20, 20, -20, 20))
-    # ecoreg_sel <- crop(ecoreg_sel, max_ext)
-    
-    #### ALTERNATIVE
 
     # Check which eco-regions are covered by the points
     ecoreg_unique <- ecoregions$Realm[is.related(ecoregions,
@@ -229,18 +190,27 @@ model_species <- function(species,
       suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(terra::aggregate(ecoreg_sel)), 0.02)))
     )
     ecoreg_sel <- terra::crop(ecoreg_sel, terra::ext(-180, 180, -90, 90))
-
-    ####
+    
+    # Crop by a limited maximum extension
+    # TODO: check if limit by extension.
+    # ext_pts <- terra::ext(terra::vect(dplyr::bind_rows(fit_pts, eval_pts[eval_pts$presence == 1,]),
+    #                     geom = coord_names))
+    # 
+    # ext_pts <- ext_pts + c(5, 5, 5, 5)
+    # ext_pts <- terra::intersect(ext_pts, terra::ext(-180, 180, -90, 90))
+    # 
+    # ecoreg_sel <- terra::crop(ecoreg_sel, ext_pts)
+    
+    
+    # Load bathymetry layer
+    bath <- rast("data/env/terrain/bathymetry_mean.tif")
+    bath <- mask(crop(bath, ecoreg_sel), ecoreg_sel)
+    
+    bath_pts <- terra::extract(bath, bind_rows(fit_pts, eval_pts))
     
     # Limit by depth if TRUE
     if (limit_by_depth) {
       if (verb_1) cli::cli_alert_info("Limiting by depth")
-      # To decide if this step will be kept:
-      # Load bathymetry layer
-      bath <- rast("data/env/terrain/bathymetry_mean.tif")
-      bath <- mask(crop(bath, ecoreg_sel), ecoreg_sel)
-      
-      bath_pts <- terra::extract(bath, bind_rows(fit_pts, eval_pts))
       
       bath_range <- range(bath_pts[,2])
       bath_range[1] <- bath_range[1] - depth_buffer
@@ -271,11 +241,21 @@ model_species <- function(species,
       }
     }
     
+    
+    # Check if species is from shallow/coastal areas and remove distcoast/bathymetry
+    if (min(bath_pts[,2]) >= -100) {
+      if (any(grepl("bathymetry", names(env$layers)))) {
+        env$layers <- terra::subset(env$layers, "bathymetry_mean", negate = T)
+        env$hypothesis <- lapply(env$hypothesis, function(x) x[!grepl("bathymetry", x)])
+      }
+      if (any(grepl("distcoast", names(env$layers)))) {
+        env$layers <- terra::subset(env$layers, "distcoast", negate = T)
+        env$hypothesis <- lapply(env$hypothesis, function(x) x[!grepl("distcoast", x)])
+      }
+    }
+    
+    
     # Assess SAC
-    # fit_pts_sac <- try(obissdm::outqc_sac(fit_pts, 
-    #                                       env_layers = subset(env$layers, env$hypothesis[[1]]),
-    #                                       plot_result = FALSE,
-    #                                       verbose = verbose))
     fit_pts_sac <- try(obissdm::outqc_sac_mantel(fit_pts, 
                                                  env_layers = terra::subset(env$layers, env$hypothesis[[1]]),
                                                  plot_result = FALSE,
@@ -328,9 +308,6 @@ model_species <- function(species,
       
       require(spatstat)
       
-      # Add some way of assessing spatial bias
-      model_log$model_details$control_bias <- correct_bias
-      
       # Get spatstat statistics and point process for control
       spat_im <- as.im(as.data.frame(aggregate(env$layers[[1]], 10, na.rm = T), xy = T))
       spat_window <- as.owin(spat_im)
@@ -350,10 +327,6 @@ model_species <- function(species,
                         "_what=biasmetrics.rds")
       saveRDS(list(k_stat = spat_env_k, l_stat = spat_env_l),
               file = outfile)
-      
-      if (correct_bias) {
-        # TODO: Add bias correction method
-      }
         
       treg <- obissdm::.get_time(treg, "Sample bias assessment")
     }
@@ -368,36 +341,6 @@ model_species <- function(species,
     model_log$model_details$hypothesis_tested <- env$hypothesis
     model_log$model_details$best_hypothesis <- multi_mod_max$best_model
     model_log$model_details$variables <- multi_mod_max$best_variables
-    
-    if (correct_bias) {
-      if (verb_1) cli::cli_alert_info("Testing bias correction")
-      temp_data <- sp_data
-      temp_data$training <- temp_data$training[, c("presence", multi_mod_max$best_variables)]
-      temp_data$eval_data <- temp_data$eval_data[, c("presence", multi_mod_max$best_variables)]
-      
-      temp_data$training$biasgrid <- extract(bias_layer, temp_data$coord_training, ID = F)[,1]
-      temp_data$eval_data$biasgrid <- extract(bias_layer, temp_data$coord_eval, ID = F)[,1]
-      
-      not_na <- !is.na(temp_data$training$biasgrid)
-      not_na_eval <- !is.na(temp_data$eval_data$biasgrid)
-      
-      temp_data$training <- temp_data$training[not_na,]
-      temp_data$coord_training <- temp_data$coord_training[not_na,]
-      
-      temp_data$eval_data <- temp_data$eval_data[not_na_eval,]
-      temp_data$coord_eval <- temp_data$coord_eval[not_na_eval,]
-      
-      max_bias <- sdm_fit(temp_data)
-      
-      bias_metrics <- apply(max_bias$cv_metrics, 2, mean, na.rm = T)
-      model_metrics <- apply(multi_mod_max$model$cv_metrics, 2, mean, na.rm = T)
-      
-      if (bias_metrics[["cbi"]] > (model_metrics[["cbi"]] + 0.1)) {
-        # TODO: continue here
-        # TODO: bias layer needs to be other, not from the single species
-        # group or something - to see
-      }
-    }
     
     # Prepare data for the best model
     sp_data$training <- sp_data$training[, c("presence", multi_mod_max$best_variables)]
@@ -444,7 +387,7 @@ model_species <- function(species,
           the_metric <- cv_res[[tg_metric]]
           if (!is.na(the_metric)) {
             if (the_metric >= tg_threshold) {
-              if (sum(is.na(model$cv_metrics[[tg_metric]])) >= 4) {
+              if (sum(is.na(model$cv_metrics[[tg_metric]])) >= 3) {
                 return(FALSE)
               } else {
                 return(TRUE)

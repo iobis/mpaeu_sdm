@@ -69,18 +69,16 @@ algos <- c("maxent", "gam", "rf", "xgboost")
 # Personalized options
 algo_opts <- obissdm::sdm_options()[algos]
 algo_opts$gam$method <- "iwlr"
-algo_opts$rf$n_trees <- c(500, 1000)
-algo_opts$xgboost$rounds <- c(10, 100)
+algo_opts$xgboost$gamma <- c(0, 4)
+algo_opts$xgboost$shrinkage <- c(0.1, 0.3)
 # Should areas be masked by the species depth?
 limit_by_depth <- TRUE
 # A buffer to be applied to the depth limitation
 depth_buffer <- 500
 # Assess spatial bias?
 assess_bias <- TRUE
-# Try to correct spatial bias?
-correct_bias <- TRUE
 # Quadrature size
-quad_samp <- 0.1 # 10% of the total number of points
+quad_samp <- 0.05 # 5% of the total number of points
 
 # Create storr to hold results
 st <- storr_rds(paste0(outacro, "_storr"))
@@ -143,7 +141,6 @@ pmod <- function(species,
                  limit_by_depth,
                  depth_buffer,
                  assess_bias,
-                 correct_bias,
                  quad_samp,
                  p) {
   
@@ -174,9 +171,8 @@ pmod <- function(species,
       limit_by_depth = limit_by_depth,
       depth_buffer = depth_buffer,
       assess_bias = assess_bias,
-      correct_bias = correct_bias,
       post_eval = c("sst", "niche", "hyper"),
-      tg_metrics = "cbi",
+      tg_metric = "cbi",
       tg_threshold = 0.3,
       quad_samp = quad_samp,
       verbose = FALSE
@@ -208,7 +204,6 @@ if (run_parallel) {
                           limit_by_depth = limit_by_depth,
                           depth_buffer = depth_buffer,
                           assess_bias = assess_bias,
-                          correct_bias = correct_bias,
                           quad_samp = quad_samp,
                           p = p, .options = furrr_options(seed = T))
   })
@@ -224,7 +219,6 @@ if (run_parallel) {
                           limit_by_depth = limit_by_depth,
                           depth_buffer = depth_buffer,
                           assess_bias = assess_bias,
-                          correct_bias = correct_bias,
                           quad_samp = quad_samp,
                           p = p)
   })

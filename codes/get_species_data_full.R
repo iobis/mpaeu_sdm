@@ -49,7 +49,7 @@ sp_list <- read.csv(sp_list_file[order(sp_list_file, decreasing = T)][1])
 # Download of subset through AWS ----
 # Estimated time is >3h
 gbif_res <- occurrence_gbif_db(full_mode = F, export_path = paste0("data/raw/gbif_", format(Sys.Date(), "%Y%m%d")),
-                   scientificname = sp_list$gbif_speciesKey[!is.na(sp_list$gbif_speciesKey)][1],
+                   scientificname = sp_list$gbif_speciesKey[!is.na(sp_list$gbif_speciesKey)],
                    verbose = T)
 
 if(any(grepl("order=NULL", list.files(gbif_res)))) {
