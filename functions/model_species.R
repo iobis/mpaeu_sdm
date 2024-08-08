@@ -243,7 +243,7 @@ model_species <- function(species,
     
     
     # Check if species is from shallow/coastal areas and remove distcoast/bathymetry
-    if (min(bath_pts[,2]) >= -100) {
+    if (min(bath_pts[,2], na.rm = T) >= -100) {
       if (any(grepl("bathymetry", names(env$layers)))) {
         env$layers <- terra::subset(env$layers, "bathymetry_mean", negate = T)
         env$hypothesis <- lapply(env$hypothesis, function(x) x[!grepl("bathymetry", x)])
