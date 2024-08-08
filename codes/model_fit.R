@@ -69,6 +69,7 @@ algos <- c("maxent", "gam", "rf", "xgboost")
 # Personalized options
 algo_opts <- obissdm::sdm_options()[algos]
 algo_opts$gam$method <- "iwlr"
+algo_opts$gam$k_val <- 5
 algo_opts$xgboost$gamma <- c(0, 4)
 algo_opts$xgboost$shrinkage <- c(0.1, 0.3)
 # Should areas be masked by the species depth?
