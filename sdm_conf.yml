@@ -57,7 +57,7 @@ variables:
       - distcoast
       - sws_max
       - so_min
-      - o2_mean
+      - no3_mean
       - par_mean
     coastal:
       - thetao_mean
@@ -65,7 +65,7 @@ variables:
       - distcoast
       - sws_max
       - so_min
-      - o2_mean
+      - no3_mean
       - par_mean
       - wavefetch
       #- slope
@@ -76,20 +76,12 @@ variables:
       - distcoast
       - sws_max
       - so_min
-      - o2_mean
+      - no3_mean
       - par_mean
       #- slope
       - rugosity
   mammals:
     basevars:
-      - siconc_max
-      - thetao_mean
-      - bathymetry_mean
-      - distcoast
-      - sws_max
-      - so_mean
-    airtemp:
-      - tas_min
       - siconc_max
       - thetao_mean
       - bathymetry_mean

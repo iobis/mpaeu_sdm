@@ -65,21 +65,23 @@ n_cores <- 4
 
 # Modelling
 # Algorithms to be used
-algos <- c("maxent", "gam", "rf", "xgboost")
+algos <- c("maxent", "rf", "xgboost")
 # Personalized options
 algo_opts <- obissdm::sdm_options()[algos]
-algo_opts$gam$method <- "iwlr"
-algo_opts$gam$k_val <- 5
 algo_opts$xgboost$gamma <- c(0, 4)
 algo_opts$xgboost$shrinkage <- c(0.1, 0.3)
 # Should areas be masked by the species depth?
 limit_by_depth <- TRUE
 # A buffer to be applied to the depth limitation
-depth_buffer <- 500
+depth_buffer <- 100
 # Assess spatial bias?
 assess_bias <- TRUE
 # Quadrature size
-quad_samp <- 0.05 # 5% of the total number of points
+quad_samp <- 0.01 # 1% of the total number of points
+# Target metric
+tg_metric <- "cbi"
+# Metric threshold
+tg_threshold <- 0.3
 
 # Create storr to hold results
 st <- storr_rds(paste0(outacro, "_storr"))
@@ -114,7 +116,7 @@ if (!limit_by_depth) {
   cli::cli_inform(c("v" = "Limiting by depth using {.val {depth_buffer}} buffer"))
 }
 cli::cat_line()
-cli::cli_inform("Outputing to folder {.path {outfolder}} using acronym {.val {outacro}}")
+cli::cli_inform("Outputting to folder {.path {outfolder}} using acronym {.val {outacro}}")
 if (dir.exists(outfolder)) {
   cli::cli_alert_warning("Folder already exists, files may be overwritten!")
 } else {
@@ -173,8 +175,8 @@ pmod <- function(species,
       depth_buffer = depth_buffer,
       assess_bias = assess_bias,
       post_eval = c("sst", "niche", "hyper"),
-      tg_metric = "cbi",
-      tg_threshold = 0.3,
+      tg_metric = tg_metric,
+      tg_threshold = tg_threshold,
       quad_samp = quad_samp,
       verbose = FALSE
     ), silent = T)
@@ -249,3 +251,7 @@ writeLines(c(capture.output(devtools::session_info()),
            paste0("data/log/", outacro, "_", format(Sys.time(), "%Y%m%d_%H%M%S"), "_sessioninfo.txt"))
 
 # And if so, destroy storr object
+if (destroy_storr) {
+  cli::cli_alert_warning("Destroying `storr` object at {.path {paste0(outacro, '_storr')}}")
+  st$destroy()
+}

@@ -61,6 +61,7 @@ temp_files/
 codes/drafts/
 suppinfo/
 analysis/internal_eval_2024
+analysis/wwf_2024/new/
 temp/
 codes/drafts/
 virtualsp/
@@ -70,3 +71,4 @@ virtualsp/
 *.zarr
 
 _packbundle.R
+outbundle.zip

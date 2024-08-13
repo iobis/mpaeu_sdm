@@ -111,7 +111,7 @@ model_species <- function(species,
   treg <- obissdm::.get_time(treg, "Species data loading")
   
   # If data is available, proceeds
-  if (nrow(species_data) >= 15) {
+  if (nrow(species_data[species_data$data_type == "fit_points",]) >= 30) {
     
     if (verb_1) cli::cli_alert_info("Enough number of points, proceeding")
     # PART 1: DATA LOADING ----
@@ -185,10 +185,11 @@ model_species <- function(species,
     model_log$model_details$ecoregions_included <- unique(ecoreg_sel$Realm)
 
     # # Apply a buffer to ensure that all areas are covered
-    sf::sf_use_s2(FALSE)
-    ecoreg_sel <- suppressMessages(
-      suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(terra::aggregate(ecoreg_sel)), 0.02)))
-    )
+    # Not necessary anymore, shapefile was adjusted
+    # sf::sf_use_s2(FALSE)
+    # ecoreg_sel <- suppressMessages(
+    #   suppressWarnings(terra::vect(sf::st_buffer(sf::st_as_sf(terra::aggregate(ecoreg_sel)), 0.02)))
+    # )
     ecoreg_sel <- terra::crop(ecoreg_sel, terra::ext(-180, 180, -90, 90))
     
     # Crop by a limited maximum extension
@@ -203,8 +204,8 @@ model_species <- function(species,
     
     
     # Load bathymetry layer
-    bath <- rast("data/env/terrain/bathymetry_mean.tif")
-    bath <- mask(crop(bath, ecoreg_sel), ecoreg_sel)
+    bath <- terra::rast("data/env/terrain/bathymetry_mean.tif")
+    bath <- terra::mask(terra::crop(bath, ecoreg_sel), ecoreg_sel)
     
     bath_pts <- terra::extract(bath, bind_rows(fit_pts, eval_pts))
     
@@ -244,6 +245,7 @@ model_species <- function(species,
     
     # Check if species is from shallow/coastal areas and remove distcoast/bathymetry
     if (min(bath_pts[,2], na.rm = T) >= -100) {
+      if (verb_1) cli::cli_alert_info("Species from shallow areas - removing bathymetry/distance to coast")
       if (any(grepl("bathymetry", names(env$layers)))) {
         env$layers <- terra::subset(env$layers, "bathymetry_mean", negate = T)
         env$hypothesis <- lapply(env$hypothesis, function(x) x[!grepl("bathymetry", x)])
@@ -268,8 +270,21 @@ model_species <- function(species,
     # Make data object
     env_size_t <- nrow(as.data.frame(env$layers, xy = T, na.rm = T))
     if (quad_samp <= 1 && quad_samp > 0) {
-      quad_samp <- round(env_size_t * quad_samp)
+      quad_samp <- ceiling(env_size_t * quad_samp)
       if (quad_samp < 10000) quad_samp <- 10000
+    }
+    # Check if size of dataset is smaller then quad_samp
+    if (nrow(fit_pts_sac) >= quad_samp) {
+      est_tsize <- nrow(fit_pts_sac) * 2
+      if (est_tsize > env_size_t) {
+        quad_samp <- env_size_t
+        est_tsize <- floor(quad_samp * 0.9)
+        fit_pts_sac <- fit_pts_sac %>% dplyr::slice_sample(n = est_size)
+        model_log$other_details <- c(model_log$other_details,
+                                     paste("fit points sampled to", est_tsize))
+      } else {
+        quad_samp <- est_tsize
+      }
     }
     quad_n <- ifelse(env_size_t < quad_samp, round(env_size_t), quad_samp)
     model_log$model_details$background_size <- quad_n 
@@ -313,8 +328,14 @@ model_species <- function(species,
       spat_window <- as.owin(spat_im)
       
       # Define ppp object based on point locations
-      spat_ppp <- ppp(x = sp_data$coord_training$decimalLongitude[sp_data$training$presence == 1],
-                      y = sp_data$coord_training$decimalLatitude[sp_data$training$presence == 1],
+      sppcords <- sp_data$coord_training[sp_data$training$presence == 1,]
+      
+      if (nrow(sppcords) > 10000) {
+        sppcords <- sppcords %>% dplyr::slice_sample(n = 10000)
+      }
+      
+      spat_ppp <- ppp(x = sppcords$decimalLongitude,
+                      y = sppcords$decimalLatitude,
                       window = spat_window)
       
       # calculate envelope around L-hat estimates.
@@ -333,18 +354,25 @@ model_species <- function(species,
     
     # PART 4: MODEL SELECTION ----
     if (verb_1) cli::cli_alert_info("Model selection")
-    multi_mod_max <- sdm_multhypo(sdm_data = sp_data, sdm_method = "maxent",
-                                  variables = env$hypothesis,
-                                  options = algo_opts[["maxent"]],
-                                  verbose = verb_2)
+    
+    if (length(env$hypothesis) != 1) {
+      multi_mod <- sdm_multhypo(sdm_data = sp_data, sdm_method = "rf",
+                                    variables = env$hypothesis,
+                                    options = algo_opts[["rf"]],
+                                    verbose = verb_2)
+    } else {
+      if (verb_1) cli::cli_alert_info("Only one hypothesis available - skipping")
+      multi_mod <- list(best_model = names(env$hypothesis),
+                            best_variables = env$hypothesis[[1]])
+    }
     
     model_log$model_details$hypothesis_tested <- env$hypothesis
-    model_log$model_details$best_hypothesis <- multi_mod_max$best_model
-    model_log$model_details$variables <- multi_mod_max$best_variables
+    model_log$model_details$best_hypothesis <- multi_mod$best_model
+    model_log$model_details$variables <- multi_mod$best_variables
     
     # Prepare data for the best model
-    sp_data$training <- sp_data$training[, c("presence", multi_mod_max$best_variables)]
-    sp_data$eval_data <- sp_data$eval_data[, c("presence", multi_mod_max$best_variables)]
+    sp_data$training <- sp_data$training[, c("presence", multi_mod$best_variables)]
+    sp_data$eval_data <- sp_data$eval_data[, c("presence", multi_mod$best_variables)]
     
     treg <- obissdm::.get_time(treg, "Model selection")
     
@@ -412,7 +440,7 @@ model_species <- function(species,
           model_name <- model_fits[[id]]$name
           if (verb_1) cli::cli_alert_info("Predicting model {id} - {model_name}")
           
-          best_hyp <- multi_mod_max$best_model
+          best_hyp <- multi_mod$best_model
           
           if (!dir.exists(pred_out)) fs::dir_create(pred_out)
           
@@ -582,7 +610,7 @@ model_species <- function(species,
                             "_what=respcurves.parquet")
           
           rcurves <- resp_curves(model_fits[[id]],
-                                 subset(env$layers, multi_mod_max$best_variables),
+                                 subset(env$layers, multi_mod$best_variables),
                                  sdm_data = sp_data)
           
           arrow::write_parquet(rcurves, outfile)
@@ -1007,6 +1035,12 @@ model_species <- function(species,
         save_models <- lapply(good_models, function(id) {
           
           model_name <- model_fits[[id]]$name
+
+          reduced_model <- try(.reduce_model_file(model_fits[[id]]))
+
+          if (!inherits(reduced_model, "try-error")) {
+            model_fits[[id]] <- reduced_model
+          }
           
           outpath <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/models/")
           if (!dir.exists(outpath)) fs::dir_create(outpath)

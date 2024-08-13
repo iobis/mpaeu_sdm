@@ -652,3 +652,54 @@ split_ds <- function(sp_occ,
   
   return(pts)
 }
+
+# Reduce file for saving
+.reduce_model_file <- function(sdm) {
+  if (grepl("gam_", sdm$name)) {
+    sdm$model$model <- NULL
+    sdm$model$wt <- NULL
+    sdm$model$y <- NULL
+    sdm$model$prior.weights <- NULL
+    sdm$model$residuals <- NULL
+    sdm$model$fitted.values <- NULL
+    sdm$model$linear.predictors <- NULL
+    sdm$model$weights <- NULL
+    sdm$model$offset <- NULL
+  } else if (grepl("rf_", sdm$name)) {
+    #From https://stats.stackexchange.com/questions/102667/reduce-random-forest-model-memory-size
+    # This part applies only to caret models
+    sdm$model$finalModel$predicted <- NULL 
+    sdm$model$finalModel$oob.times <- NULL 
+    sdm$model$finalModel$y <- NULL
+    sdm$model$finalModel$votes <- NULL
+    sdm$model$control$indexOut <- NULL
+    sdm$model$control$index    <- NULL
+    sdm$model$trainingData <- NULL
+    # This applies to all
+    sdm$model$err.rate <- NULL
+    sdm$model$predicted <- NULL
+    sdm$model$votes <- NULL
+    sdm$model$oob.times <- NULL
+    sdm$model$y <- NULL
+    attr(sdm$model$terms,".Environment") <- c()
+    attr(sdm$model$formula,".Environment") <- c()
+  } else if (sdm$name == "maxent") {
+    sdm$model$dev.ratio <- NULL
+    sdm$model$beta <- NULL
+  } else if (sdm$name == "xgboost") {
+    sdm$model$evaluation_log <- NULL
+    sdm$model$raw <- NULL
+  }
+  
+  return(sdm)
+}
+
+# Normalize raster
+# .normalize_raster <- function(pred, range = NULL) {
+#   if (is.null(range)) {
+#     range <- terra::minmax(pred)[,1]
+#   }
+#   pred <- (pred - min(range)) / (max(range) - min(range))
+#   return(list(prediction = pred,
+#               range = range))
+# }
