@@ -17,6 +17,8 @@
 #' @param outacro an unique acronym for the modelling
 #' @param algorithms which algorithms to fit. See [obissdm::sdm_options()] for a
 #'   list of available algorithms
+#' @param algo_opts options for the algorithms obtained through 
+#'   [obissdm::sdm_options()]. IF `NULL` it will use the defaults
 #' @param limit_by_depth should the study area be limited by depth? If so, the
 #'   depth is extracted from occurrence records and after applying the buffer
 #'   the layers are masked. Recommended to keep `TRUE`
@@ -24,6 +26,15 @@
 #'   TRUE`. Can be 0 to apply no buffer (not recommended)
 #' @param assess_bias if `TRUE`, perform tests for potential spatial bias on
 #'   occurrence records
+#' @param post_eval character vector with names of post-evaluation methods to 
+#'   try. Should be one of `sst` (thermal niche), `niche` (niche equivalency)
+#'   or `hyper` (comparison with hypervolume niche estimation)
+#' @param tg_metric target metric to be used to assess model quality
+#' @param tg_threshold threshold for the target metric to a model be considered
+#'   of good quality
+#' @param quad_samp number of quadrature points to be sampled. Can be also a
+#'   number between 0 (higher than) and 1, expressing the percentage of available
+#'   environmental cells to be sampled as quadrature points
 #' @param verbose if `TRUE` print essential messages. Can also be numeric: 0 for
 #'   no messages, 1 for progress messages and 2 for all messages.
 #'
@@ -111,7 +122,8 @@ model_species <- function(species,
   treg <- obissdm::.get_time(treg, "Species data loading")
   
   # If data is available, proceeds
-  if (nrow(species_data[species_data$data_type == "fit_points",]) >= 30) {
+  minptslim <- 30
+  if (nrow(species_data) > 0 && nrow(species_data[species_data$data_type == "fit_points",]) >= minptslim) {
     
     if (verb_1) cli::cli_alert_info("Enough number of points, proceeding")
     # PART 1: DATA LOADING ----
@@ -1083,7 +1095,7 @@ model_species <- function(species,
     }
     
   } else {
-    if (nrow(species_data) < 15) {
+    if (nrow(species_data) > 0 && nrow(species_data) < minptslim) {
       if (verb_1) cli::cli_alert_warning("Low number of points, failed")
       st_status <- "low_data"
     } else {
