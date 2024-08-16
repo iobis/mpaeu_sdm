@@ -22,13 +22,8 @@ st <- storr_rds("qc_storr")
 sp_list_p <- recent_file("data", "all_splist")
 species_list <- read.csv(sp_list_p)
 
-priority <- read.csv("../mpaeu_constatus/v4/MPAEU_D3_4_threatened_species_fulltaxonomy.csv")
-priority <- priority$valid_AphiaID
-priority <- priority[!is.na(priority)]
-species_list <- species_list[species_list$AphiaID %in% priority,]
-
 # Run QC in parallel ----
-plan(multisession, workers = 3) # Need to be multisession, otherwise crashes
+plan(multisession, workers = 4) # Need to be multisession, otherwise crashes
 
 proc_res <- future_map(1:nrow(species_list), function(id){
   
@@ -42,7 +37,7 @@ proc_res <- future_map(1:nrow(species_list), function(id){
                               sdm_base = terra::rast("data/env/current/thetao_baseline_depthsurf_mean.tif"),
                               species_list = sp_list_p,
                               species_folder = "data/raw/",
-                              reader = "arrow"))
+                              reader = "duckdb"))
     
     if (!inherits(res, "try-error")) {
       st$set(sp, "done")

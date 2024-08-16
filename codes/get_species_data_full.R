@@ -29,8 +29,8 @@ download.file(
 
 
 # Get data from GBIF ----
-sp_list_file <- list.files("data", pattern = "all_splist_", full.names = T)
-sp_list <- read.csv(sp_list_file[order(sp_list_file, decreasing = T)][1])
+sp_list_file <- recent_file("data", "all_splist")
+sp_list <- read.csv(sp_list_file)
 
 # In the case of our project, the data to be downloaded is very big. 
 # There are 3 ways of downloading, each with benefits and drawbacks

@@ -26,6 +26,6 @@ outqc_get_distances(base = base,
                     outfolder = "data/distances",
                     mc_cores = 4)
 
-outqc_dist_tozarr("data/distances", remove_distances = T)
+outqc_dist_tords("data/distances", parallel_cores = 8, remove_distances = T)
 
 ###END

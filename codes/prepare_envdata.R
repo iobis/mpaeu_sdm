@@ -22,8 +22,6 @@ set.seed(2023)
 # Prepare layers
 clip_area <- ext(-41, 47, 20, 89)
 
-# mregions <- mregions::mr_shp("MarineRegions:iho")
-# mask_area <- mregions[mregions$name %in% c("Red Sea", "Gulf of Aqaba", "Gulf of Suez"),]
 mask_area <- vect("data/shapefiles/mpa_europe_starea_v2.shp")
 
 groups <- names(get_conf(what = "groups")$groups)
@@ -45,10 +43,6 @@ for (i in 1:nrow(test_grid)) {
   nams <- nams[!grepl("wavefetch", nams)]
   
   env_layers <- terra::subset(env_layers$layers, nams)
-  
-  # env_layers <- crop(env_layers, mask_area)
-  # 
-  # env_layers <- mask(env_layers, mask_area, inverse = T)
   
   vif_step_list[[i]] <- usdm::vifstep(env_layers, th = 5)
 }
@@ -84,10 +78,6 @@ for (i in to_check) {
   
   env_layers <- terra::subset(env_layers$layers, nams)
   
-  # env_layers <- crop(env_layers, clip_area)
-  # 
-  # env_layers <- mask(env_layers, mask_area, inverse = T)
-  
   vif_list[[i]] <- usdm::vif(env_layers)
 }
 
@@ -120,10 +110,6 @@ for (i in to_check) {
   nams <- nams[!grepl("wavefetch", nams)]
   
   env_layers <- terra::subset(env_layers$layers, nams)
-  
-  # env_layers <- crop(env_layers, clip_area)
-  # 
-  # env_layers <- mask(env_layers, mask_area, inverse = T)
   
   vif_list[[i]] <- usdm::vif(env_layers)
 }

@@ -76,7 +76,8 @@ sum(species_list_or$source_both)
 gbif_keys <- rgbif::name_backbone_checklist(species_list_or, strict = T)
 
 gbif_keys <- gbif_keys %>%
-    select(usageKey, gbif_scientificName = canonicalName, gbif_speciesKey = usageKey)
+    select(gbif_scientificName = canonicalName, gbif_speciesKey = usageKey,
+           gbif_order = order)
 
 species_list_final <- bind_cols(species_list_or, gbif_keys) %>%
     select(-rank)
