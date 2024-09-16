@@ -23,7 +23,7 @@ sp_list_p <- recent_file("data", "all_splist")
 species_list <- read.csv(sp_list_p)
 
 # Run QC in parallel ----
-plan(multisession, workers = 4) # Need to be multisession, otherwise crashes
+plan(multisession, workers = 6) # Need to be multisession, otherwise crashes
 
 proc_res <- future_map(1:nrow(species_list), function(id){
   
@@ -37,7 +37,8 @@ proc_res <- future_map(1:nrow(species_list), function(id){
                               sdm_base = terra::rast("data/env/current/thetao_baseline_depthsurf_mean.tif"),
                               species_list = sp_list_p,
                               species_folder = "data/raw/",
-                              reader = "duckdb"))
+                              reader = "duckdb",
+                              narm_out = FALSE))
     
     if (!inherits(res, "try-error")) {
       st$set(sp, "done")
@@ -52,7 +53,7 @@ proc_res <- future_map(1:nrow(species_list), function(id){
   
   return(to_return)
   
-}, .progress = T)
+}, .progress = T, .options = furrr_options(seed = 2023))
 
 # Check if everything was done
 if (length(species_list$taxonID[!species_list$taxonID %in% as.numeric(st$list())]) > 0) {

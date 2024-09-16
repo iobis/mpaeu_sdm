@@ -67,7 +67,8 @@ req_packages <- c(
   "jsonlite",
   "gbifdb",
   "minioclient",
-  "BiocManager"
+  "BiocManager",
+  "sfarrow"
 )
 
 # Needed packages on GitHub
