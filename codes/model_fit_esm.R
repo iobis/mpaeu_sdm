@@ -162,7 +162,7 @@ pmod <- function(species,
   if (to_do) {
     st$set(species, "running")
     
-    fit_result <- try(model_species(
+    fit_result <- try(model_species_esm(
       species = species,
       group = group,
       species_dataset = species_dataset,
