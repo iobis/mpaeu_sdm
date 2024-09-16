@@ -21,7 +21,7 @@
     #to do!
   } else if (any(grepl("key", list.files(species_dataset, recursive = T)))) {
     lf <- list.files(species_dataset, recursive = T)
-    lf <- lf[grepl(paste0("key=", species), lf)]
+    lf <- lf[grepl(paste0("key=", species, ".parquet"), lf)]
     if (length(lf) > 0) {
       species_data <- arrow::read_parquet(paste0(species_dataset, "/", lf))
     } else {
