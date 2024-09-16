@@ -295,6 +295,7 @@ model_species_esm <- function(species,
     if (quad_samp <= 1 && quad_samp > 0) {
       quad_samp <- ceiling(env_size_t * quad_samp)
       if (quad_samp < 10000) quad_samp <- 10000
+      if (quad_samp > 50000) quad_samp <- 50000
     }
     # Check if size of dataset is smaller then quad_samp
     if (nrow(fit_pts_sac) >= quad_samp) {
