@@ -37,7 +37,7 @@ join_pred_sp <- function(results_folder, model_acro, species, m, sc) {
 
     th_list <- lapply(species, function(x){
         f <- glue("{results_folder}/taxonid={x}/model={model_acro}/metrics/taxonid={x}_model={model_acro}_what=thresholds.parquet")
-        read_parquet(f)
+        arrow::read_parquet(f)
     })
 
     results_list <- lapply(1:length(thresholds), function(x) NULL)
