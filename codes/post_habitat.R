@@ -207,7 +207,7 @@ join_predictions <- function(species, model_acro, hab_name,
     return(invisible(NULL))
 }
 
-for (k in biogenic_groups) {
+for (k in 1:length(biogenic_groups)) {
     tg_biog <- names(biogenic_groups)[k]
 
     join_predictions(biogenic_groups[[k]], model_acro = acro, hab_name = tg_biog)
