@@ -177,7 +177,7 @@ join_predictions <- function(species, model_acro, hab_name,
                 trast <- trast * 100
                 trast <- as.int(trast)
                 names(trast) <- paste0("continuous_", res_nams[r])
-                writeRaster(trast, outfile, overwrite = T, datatype = "INT1U", overwrite = T)
+                writeRaster(trast, outfile, overwrite = T, datatype = "INT1U")
                 obissdm::cogeo_optim(outfile)
 
                 outfile <- glue(
@@ -188,7 +188,7 @@ join_predictions <- function(species, model_acro, hab_name,
                 trast <- trast * 100
                 trast <- as.int(trast)
                 names(trast) <- paste0("binary_", res_nams[r])
-                writeRaster(trast, outfile, overwrite = T, datatype = "INT1U", overwrite = T)
+                writeRaster(trast, outfile, overwrite = T, datatype = "INT1U")
                 obissdm::cogeo_optim(outfile)
             }
         }
