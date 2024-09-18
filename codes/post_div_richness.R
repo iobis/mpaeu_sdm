@@ -102,64 +102,68 @@ join_models <- function(species, thresholds = c("p10", "mtp", "max_spec_sens"),
     names(results) <- modes
 
     for (i in 1:length(species)) {
-        mask_file <- rast(
-            file.path(
-                results_folder,
-                paste0(
-                    glue("taxonid={species[i]}/model={model_acro}/predictions/"),
-                    glue("taxonid={species[i]}_model={model_acro}_mask_cog.tif")
+        example_file <- file.path(results_folder,
+                        glue("taxonid={species[i]}/model={model_acro}/predictions/"),
+                        glue("taxonid={species[i]}_model={model_acro}_method={m}_scen={sc}_cog.tif")
+                    )
+
+        if (file.exists(example_file)) {
+            mask_file <- rast(
+                file.path(
+                    results_folder,
+                    paste0(
+                        glue("taxonid={species[i]}/model={model_acro}/predictions/"),
+                        glue("taxonid={species[i]}_model={model_acro}_mask_cog.tif")
+                    )
                 )
             )
-        )
-        mask_file_depth <- mask_file$fit_region
-        mask_file_depth[mask_file_depth == 0] <- NA
-        mask_file <- mask_file$fit_ecoregions
-        mask_file <- terra::mask(mask_file, mask_file_depth)
-        mask_file[mask_file == 0] <- NA
+            mask_file_depth <- mask_file$fit_region
+            mask_file_depth[mask_file_depth == 0] <- NA
+            mask_file <- mask_file$fit_ecoregions
+            mask_file <- terra::mask(mask_file, mask_file_depth)
+            mask_file[mask_file == 0] <- NA
 
-        if (is.null(results$continuous)) {
-            results$continuous <- mask_thresh(
-                species = species[i], model_acro = model_acro, m = m, sc = sc,
-                th_val = NULL, mask_layer = mask_file
-            )
-        } else {
-            results$continuous <- sum(results$continuous, mask_thresh(
-                species = species[i], model_acro = model_acro, m = m, sc = sc,
-                th_val = NULL, mask_layer = mask_file
-            ), na.rm = T)
-        }
+            if (is.null(results$continuous)) {
+                results$continuous <- mask_thresh(
+                    species = species[i], model_acro = model_acro, m = m, sc = sc,
+                    th_val = NULL, mask_layer = mask_file
+                )
+            } else {
+                results$continuous <- sum(results$continuous, mask_thresh(
+                    species = species[i], model_acro = model_acro, m = m, sc = sc,
+                    th_val = NULL, mask_layer = mask_file
+                ), na.rm = T)
+            }
 
-        th_file <- arrow::read_parquet(file.path(
+            th_file <- arrow::read_parquet(file.path(
                 glue("{results_folder}/taxonid={species[i]}/model={model_acro}/"),
                 glue("metrics/taxonid={species[i]}_model={model_acro}_what=thresholds.parquet")
             ))
 
-        for (th in 1:length(thresholds)) {
+            for (th in 1:length(thresholds)) {
+                th_val <- as.numeric(th_file[th_file$model == m, thresholds[th]])
 
-            th_val <- as.numeric(th_file[th_file$model == m, thresholds[th]])
+                ready_rast <- mask_thresh(
+                    species = species[i], model_acro = model_acro, m = m, sc = sc,
+                    th_val = th_val, mask_layer = mask_file
+                )
 
-            ready_rast <- mask_thresh(
-                species = species[i], model_acro = model_acro, m = m, sc = sc,
-                th_val = th_val, mask_layer = mask_file
-            )
+                thc_n <- paste0("thresh_", thresholds[th])
+                thb_n <- paste0("bin_", thresholds[th])
 
-            thc_n <- paste0("thresh_", thresholds[th])
-            thb_n <- paste0("bin_", thresholds[th])
-
-            if (is.null(results[[thc_n]])) {
-                results[[thc_n]] <- ready_rast$cont
-                results[[thb_n]] <- ready_rast$bin
-            } else {
-                results[[thc_n]] <- sum(results[[thc_n]], ready_rast$cont, na.rm = T)
-                results[[thb_n]] <- sum(results[[thb_n]], ready_rast$bin, na.rm = T)
+                if (is.null(results[[thc_n]])) {
+                    results[[thc_n]] <- ready_rast$cont
+                    results[[thb_n]] <- ready_rast$bin
+                } else {
+                    results[[thc_n]] <- sum(results[[thc_n]], ready_rast$cont, na.rm = T)
+                    results[[thb_n]] <- sum(results[[thb_n]], ready_rast$bin, na.rm = T)
+                }
             }
-
         }
     }
 
     return(results)
 }
-
 
 # Get richness ----
 to_get <- expand.grid(methods = methods, scens = scens)
