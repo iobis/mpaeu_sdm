@@ -925,10 +925,23 @@ model_species <- function(species,
         
         # PART 11: EVALUATE MODELS USING OTHER TECHNIQUES ----
         if (verb_1) cli::cli_alert_info("Performing post-evaluation")
+
+        if (sum(sp_data$training$presence) > 5000) {
+          sp_data_post <- sp_data
+          which_pres <- which(sp_data$training$presence == 1)
+          which_bckg <- which(sp_data$training$presence == 0)
+          which_pres <- sample(which_pres, size = 5000)
+          sp_data_post$training <- sp_data$training[c(which_pres, which_bckg),]
+          sp_data_post$coord_training <- sp_data$coord_training[c(which_pres, which_bckg),]
+          model_log$other_details <- c(model_log$other_details,
+                                     "post evaluation based on 5000 occurrence records")
+        } else {
+          sp_data_post <- sp_data
+        }
         
         if ("sst" %in% post_eval) {
           if (verb_1) cli::cli_inform(c(">" = "Performing SST post-evaluation"))
-          model_log <- .cm_posteval_sst(model_predictions, sp_data,
+          model_log <- .cm_posteval_sst(model_predictions, sp_data_post,
                                         thresh_p10_mtp, algorithms, hab_depth,
                                         good_models, model_log)
         }
@@ -941,7 +954,7 @@ model_species <- function(species,
           }
 
           niche_eval <- try(lapply(1:length(model_predictions), function(id){
-            result <- .cm_posteval_nicheequiv(sp_data, model_predictions[[id]], env$layers,
+            result <- .cm_posteval_nicheequiv(sp_data_post, model_predictions[[id]], env$layers,
                                               iterations = 5, plot_example = F)
             result$model <- new_names[id]
             result
@@ -949,7 +962,7 @@ model_species <- function(species,
           # We add this as the function is failing some times on the first run
           if (inherits(niche_eval, "try-error")) {
             niche_eval <- try(lapply(1:length(model_predictions), function(id){
-              result <- .cm_posteval_nicheequiv(sp_data, model_predictions[[id]], env$layers,
+              result <- .cm_posteval_nicheequiv(sp_data_post, model_predictions[[id]], env$layers,
                                                 iterations = 5, plot_example = F,
                                                 extend.extent = c(-5, 5, -5, 5))
               result$model <- new_names[id]
@@ -974,7 +987,7 @@ model_species <- function(species,
                                    var_imp = model_varimport,
                                    model_predictions = model_predictions,
                                    env_layers = env$layers,
-                                   sdm_data = sp_data, return_plot = F), silent = T)
+                                   sdm_data = sp_data_post, return_plot = F), silent = T)
           if (sink.number() > 0) sink()
           if (!inherits(niche_eval, "try-error")) {
             niche_eval_status <- lapply(niche_eval, function(x) {

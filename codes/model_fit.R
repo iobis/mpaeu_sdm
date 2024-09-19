@@ -233,7 +233,7 @@ if (run_parallel) {
 # Check if everything was processed
 sp_done <- st$list()
 sp_done <- length(sp_done[sp_done %in% species_list$taxonID])
-cli::cli_alert_warning("{.val {}} out of {.val {nrow(species_list)}} model{?s} processed.")
+cli::cli_alert_warning("{.val {sp_done}} out of {.val {nrow(species_list)}} model{?s} processed.")
 
 # Save session info
 fs::dir_create("data/log")
