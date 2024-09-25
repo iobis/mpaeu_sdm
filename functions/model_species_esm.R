@@ -935,10 +935,16 @@ model_species_esm <- function(species,
         if (verb_1) cli::cli_alert_info("Saving models objects")
         
         # Update log with best parameters
-        model_log$model_bestparams$esm <- bind_rows(
-          lapply(
-            1:length(model_fits), function(x) cbind(model_fits[[x]]$parameters, part = x)
-          )
+        model_log$model_bestparams$esm <- list(
+           individual_parameters = bind_rows(
+             lapply(
+               1:length(model_fits), function(x) cbind(model_fits[[x]]$parameters, part = x)
+             )
+           ),
+           scores = attr(model_fits, "scores"),
+           variable_combinations = lapply(
+             1:length(model_fits), function(x) model_fits[[x]]$variables
+           )
         )
         
         # Save models
