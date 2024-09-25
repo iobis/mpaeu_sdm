@@ -128,6 +128,8 @@ bootstrap_model <- function(species, iterations = 20,
                                       verbose = verbose)
         }
     }
+
+    return(invisible(NULL))
 }
 
 predict_bootstrap <- function(fit, sdm_data, species, group, hab_depth,
@@ -249,7 +251,7 @@ bootstrap_sp <- function(species, target = "all") {
             outf <- gsub("_it=*.*", "", outf)
             outf <- glue::glue("results/taxonid={species}/model={acro}/predictions/{outf}_what=bootcv.tif")
 
-            writeRaster(cv_rast, outf, overwrite = T, datatype = "INT1U")
+            writeRaster(cv_rast, outf, overwrite = T, datatype = "INT2U")
             cogeo_optim(outf)
         }
     }
@@ -292,7 +294,7 @@ bootstrap_sp <- function(species, target = "all") {
             outf <- glue::glue("taxonid={species}_model={acro}_method=ensemble_scen={sc}")
             outf <- glue::glue("results/taxonid={species}/model={acro}/predictions/{outf}_what=bootcv.tif")
 
-            writeRaster(cv_rast, outf, overwrite = T, datatype = "INT1U")
+            writeRaster(cv_rast, outf, overwrite = T, datatype = "INT2U")
             cogeo_optim(outf)
         }
     }
