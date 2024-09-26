@@ -299,6 +299,8 @@ bootstrap_sp <- function(species, target = "all") {
         }
     }
 
+    fs::dir_delete(glue::glue("results/taxonid={species}/model={acro}/predictions/temp_pred/"))
+
     return("done")
 }
 
