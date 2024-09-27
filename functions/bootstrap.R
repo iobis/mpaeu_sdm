@@ -197,15 +197,17 @@ predict_bootstrap <- function(fit, sdm_data, species, group, hab_depth,
     return(invisible(NULL))
 }
 
-bootstrap_sp <- function(species, target = "all") {
+bootstrap_sp <- function(species, target = "all",
+                         acro = "mpaeu", results_folder = "results",
+                         iterations = 20, n_back_max = 50000) {
 
     bt_result <- try(bootstrap_model(
         species,
-        iterations = 20,
+        iterations = iterations,
         model_acro = acro,
-        results_folder = "results",
+        results_folder = results_folder,
         target = target,
-        n_back_max = 50000
+        n_back_max = n_back_max
     ), silent = F)
 
     if (inherits(bt_result, "try-error")) return(list("failed", bt_result))
@@ -298,6 +300,16 @@ bootstrap_sp <- function(species, target = "all") {
             cogeo_optim(outf)
         }
     }
+
+    jsonf <- glue::glue("{results_folder}/taxonid={species}/model={acro}/taxonid={species}_model={acro}_what=log.json")
+    log_file <- jsonlite::read_json(jsonf)
+    log_file$model_uncertainty$bootstrap_status <- "done"
+    log_file$model_uncertainty$bootstrap_iterations <- iterations
+    log_file$model_uncertainty$bootstrap_models <- ifelse(length(un_models) > 1,
+                                                          c(un_models, "ensemble"),
+                                                          un_models)
+    log_file$model_uncertainty$bootstrap_max_n <- n_back_max
+    jsonlite::write_json(log_file, path = jsonf, pretty = TRUE)
 
     fs::dir_delete(glue::glue("results/taxonid={species}/model={acro}/predictions/temp_pred/"))
 
