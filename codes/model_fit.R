@@ -217,7 +217,7 @@ if (run_parallel) {
                           species_dataset = species_dataset,
                           outfolder = outfolder,
                           outacro = outacro,
-                          algorithms = algorithms,
+                          algorithms = algos,
                           algo_opts = algo_opts,
                           limit_by_depth = limit_by_depth,
                           depth_buffer = depth_buffer,

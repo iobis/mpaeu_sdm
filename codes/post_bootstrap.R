@@ -11,6 +11,8 @@ library(obissdm)
 library(terra)
 library(storr)
 library(progressr)
+library(future)
+library(furrr)
 set.seed(2023)
 source("functions/bootstrap.R")
 handlers("cli")
@@ -24,6 +26,7 @@ start_time <- Sys.time()
 
 # Model acronym
 acro <- "mpaeu"
+results_folder <- "results"
 
 # Set species to run
 # To run specific species, uncomment below and comment the others
@@ -95,6 +98,10 @@ pmod <- function(species,
                 status = "failed",
                 error = fit_result
             ))
+            jsonf <- glue::glue("{results_folder}/taxonid={species}/model={acro}/taxonid={species}_model={acro}_what=log.json")
+            log_file <- jsonlite::read_json(jsonf)
+            log_file$model_uncertainty$bootstrap_status <- "failed"
+            jsonlite::write_json(log_file, path = jsonf, pretty = TRUE)
         }
     }
 
