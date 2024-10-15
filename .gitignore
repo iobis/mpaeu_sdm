@@ -67,6 +67,7 @@ analysis/wwf_2024/new/
 temp/
 codes/drafts/
 virtualsp/
+internal/
 
 # Large/temporary files
 *_storr/

@@ -9,6 +9,7 @@
 library(terra)
 library(glue)
 acro <- "mpaeu"
+res_folder <- "/data/scps/v3/results/"
 
 biogenic_groups <- list(
     seagrass = c(
@@ -130,7 +131,7 @@ join_pred_sp <- function(results_folder, model_acro, species, m, sc) {
 }
 
 join_predictions <- function(species, model_acro, hab_name,
-                            results_folder = "results", out_folder = "habitat") {
+                            results_folder = res_folder, out_folder = "habitat") {
 
     fs::dir_create(out_folder)
 
