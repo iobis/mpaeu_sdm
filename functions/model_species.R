@@ -495,7 +495,7 @@ model_species <- function(species,
             env_to_pred <- terra::subset(env_to_pred, colnames(sp_data$training)[-1])
 
             if (best_hyp == "coastal") {
-              env_to_pred <- terra::mask(env_to_pred, env$layers[[1]])
+              env_to_pred <- terra::mask(terra::crop(env_to_pred, env$layers[[1]]), env$layers[[1]])
             }
             
             pred <- predict(model_fits[[id]], env_to_pred)
