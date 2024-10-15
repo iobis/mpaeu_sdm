@@ -35,6 +35,8 @@
 #' @param quad_samp number of quadrature points to be sampled. Can be also a
 #'   number between 0 (higher than) and 1, expressing the percentage of available
 #'   environmental cells to be sampled as quadrature points
+#' @param cleanup if `TRUE` (recommended), if the folder for the species already
+#'   exists, it will be removed
 #' @param verbose if `TRUE` print essential messages. Can also be numeric: 0 for
 #'   no messages, 1 for progress messages and 2 for all messages.
 #'
@@ -76,6 +78,7 @@ model_species <- function(species,
                           tg_metric = "cbi",
                           tg_threshold = 0.3,
                           quad_samp = 50000,
+                          cleanup = TRUE,
                           verbose = FALSE) {
   
   # Check verbosity
@@ -93,6 +96,10 @@ model_species <- function(species,
   }
   
   if (verb_1) cli::cli_alert_info("Starting model for species {species}")
+
+  if (cleanup && dir.exists(file.path(outfolder, paste0("taxonid=", species)))) {
+    fs::dir_delete(file.path(outfolder, paste0("taxonid=", species)))
+  }
   
   # Record timing
   treg <- obissdm::.get_time()
@@ -514,7 +521,11 @@ model_species <- function(species,
             if (do_mess) {
               # Save MESS
               if (verb_1) cli::cli_alert_info("Generating MESS map.")
-              to_mess <- terra::aggregate(env_to_pred, 12)
+              if (best_hyp == "coastal") { 
+                to_mess <- terra::aggregate(env_to_pred, 12, na.rm = T)
+              } else {
+                to_mess <- terra::aggregate(env_to_pred, 12)
+              }
               mess_map <- ecospat::ecospat.mess(
                 na.omit(as.data.frame(to_mess, xy = T)),
                 cbind(sp_data$coord_training, sp_data$training[,2:ncol(sp_data$training)]))
