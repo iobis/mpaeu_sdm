@@ -900,7 +900,11 @@ model_species <- function(species,
         ecoreg_mask <- mask(base_layer, ecoreg_sel)
         
         # Get area used for fitting
-        fit_mask <- terra::extend(env$layers[[1]], model_predictions[[1]])
+        if (multi_mod$best_model == "coastal") {
+          fit_mask <- terra::extend(env$layers[[1]], base_layer)
+        } else {
+          fit_mask <- terra::extend(env$layers[[1]], model_predictions[[1]])
+        }
         fit_mask[!is.na(fit_mask)] <- 1
         
         # Convex hull mask
@@ -1116,11 +1120,17 @@ model_species <- function(species,
       } else {
         if (verb_1) cli::cli_alert_warning("No good model available")
         st_status <- "no_good_model"
+        if (dir.exists(file.path(outfolder, paste0("taxonid=", species)))) {
+          fs::dir_delete(file.path(outfolder, paste0("taxonid=", species)))
+        }
       }
       
     } else {
       if (verb_1) cli::cli_alert_warning("All models failed")
       st_status <- "all_failed"
+      if (dir.exists(file.path(outfolder, paste0("taxonid=", species)))) {
+          fs::dir_delete(file.path(outfolder, paste0("taxonid=", species)))
+      }
     }
     
   } else {
