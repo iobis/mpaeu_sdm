@@ -80,6 +80,7 @@ model_species_esm <- function(species,
                           tg_metric = "cbi",
                           tg_threshold = 0.3,
                           quad_samp = 50000,
+                          cleanup = TRUE,
                           verbose = FALSE) {
   
   # Check verbosity
