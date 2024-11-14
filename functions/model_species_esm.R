@@ -37,6 +37,8 @@
 #' @param quad_samp number of quadrature points to be sampled. Can be also a
 #'   number between 0 (higher than) and 1, expressing the percentage of available
 #'   environmental cells to be sampled as quadrature points
+#' @param cleanup if `TRUE` (recommended), if the folder for the species already
+#'   exists, it will be removed
 #' @param verbose if `TRUE` print essential messages. Can also be numeric: 0 for
 #'   no messages, 1 for progress messages and 2 for all messages.
 #'
@@ -99,6 +101,10 @@ model_species_esm <- function(species,
   }
   
   if (verb_1) cli::cli_alert_info("Starting model for species {species}")
+
+  if (cleanup && dir.exists(file.path(outfolder, paste0("taxonid=", species)))) {
+    fs::dir_delete(file.path(outfolder, paste0("taxonid=", species)))
+  }
   
   # Record timing
   treg <- obissdm::.get_time()
@@ -991,6 +997,10 @@ model_species_esm <- function(species,
     } else {
       if (verb_1) cli::cli_alert_warning("ESM failed")
       st_status <- "all_failed"
+      if (verb_2) print(model_fits)
+      if (dir.exists(file.path(outfolder, paste0("taxonid=", species)))) {
+          fs::dir_delete(file.path(outfolder, paste0("taxonid=", species)))
+      }
     }
     
   } else {
