@@ -315,3 +315,117 @@ get_protseas_cell <- function(protseas, resolution = 0.05) {
 #   }
 #   return(protseas_sf_bind)
 # }
+
+
+### Main richness function 
+# Create function for processing
+proc_maps <- function(index, batches, model, threshold_table, outfolder, group, scenario, results_folder, gen_cont = FALSE) {
+  ids <- batches[[index]]
+  
+  if (!is.list(model)) {
+    sel_threshold <- threshold_table[match(ids, threshold_table$taxonID, nomatch = 0), ]
+    if (!all.equal(sel_threshold$taxonID, ids)) stop("Problem with thresholds IDs")
+    
+    sel_threshold <- pull(sel_threshold, model)
+    sel_threshold <- sel_threshold[!is.na(sel_threshold)]
+    if (length(sel_threshold) != length(ids)) stop("Problem with thresholds table")
+  } else {
+    model <- model[[index]]
+    if (length(ids) != length(model)) stop("Problem in valid models vector")
+    
+    sel_threshold <- threshold_table[match(ids, threshold_table$taxonID, nomatch = 0), ]
+    if (!all.equal(sel_threshold$taxonID, ids)) stop("Problem with thresholds IDs")
+    sel_threshold <- unlist(lapply(1:nrow(sel_threshold), function(x) {
+      pull(sel_threshold, model[x])[x]
+    }))
+  }
+  
+  modelf <- ifelse(model == "rf",
+                   "rf_classification_ds", model
+  )
+  
+  raster_paths <- file.path(
+    results_folder,
+    glue::glue(
+      "taxonid={ids}/model=mpaeu/predictions/taxonid={ids}_model=mpaeu_method={modelf}_scen={scenario}_cog.tif"
+    )
+  )
+  
+  mask_paths <- file.path(
+    results_folder,
+    glue::glue(
+      "taxonid={ids}/model=mpaeu/predictions/taxonid={ids}_model=mpaeu_mask_cog.tif"
+    )
+  )
+  
+  # Open xarray datasets
+  rasters <- xr$open_mfdataset(
+    raster_paths,
+    engine = "rasterio", concat_dim = "band", combine = "nested", chunks = "auto"
+  )
+  
+  masks <- xr$open_mfdataset(
+    mask_paths,
+    engine = "rasterio", concat_dim = "band", combine = "nested", chunks = "auto"
+  )
+  
+  # Masks band 1 = native ecoregions
+  masks_band1 <- masks$sel(band = 1)
+  
+  rasters_band1 <- rasters$sel(band = 1)
+  
+  masked_rasters <- rasters_band1 * masks_band1
+  
+  
+  #### Produce binary version
+  thresholds_da <- xr$DataArray(as.integer(as.vector(sel_threshold)),
+                                dims = list("band"), coords = list("band" = masked_rasters$band)
+  )
+  
+  # Apply thresholds: any value < threshold becomes 0, >= threshold becomes 1
+  binary_rasters <- xr$where(
+    masked_rasters$isnull(), # Check if values are NaN
+    np$nan, # If NaN, keep as NaN
+    xr$where(masked_rasters >= thresholds_da, 1, 0)
+  )
+  
+  layer_sum <- binary_rasters$sum(dim = "band", skipna = FALSE)
+  
+  layer_sum_filled <- layer_sum$fillna(-1)
+  
+  layer_sum_int <- layer_sum_filled$astype("int32")
+  
+  
+  #### Produce non-binary version
+  if (gen_cont) {
+    non_binary <- xr$where(
+      masked_rasters$isnull(), # Check if values are NaN
+      np$nan, # If NaN, keep as NaN
+      xr$where(masked_rasters >= thresholds_da, masked_rasters, 0)
+    )
+    
+    # Scale each raster layer to 0-1 by dividing by 100
+    scaled_rasters <- non_binary / 100
+    
+    non_binary_layer_sum <- scaled_rasters$sum(dim = "band", skipna = FALSE)
+    
+    non_binary_layer_sum_filled <- non_binary_layer_sum$fillna(-1)
+  }
+  
+  
+  # Save results
+  group <- gsub("\\/", "-", group)
+  
+  if (length(model) > 1) {
+    model <- "combined"
+  }
+  
+  outf <- file.path(outfolder, paste0("richness_", group, "_", model, "_", scenario, "_binary_part", index, ".tif"))
+  layer_sum_int$rio$to_raster(outf)
+  
+  if (gen_cont) {
+    non_binary_layer_sum_filled$rio$to_raster(gsub("binary", "cont", outf))
+  }
+  
+  return(outf)
+}

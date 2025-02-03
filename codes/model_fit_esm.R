@@ -150,8 +150,13 @@ pmod <- function(species,
   p()
   
   if (st$exists(species)) {
-    if (st$get(as.character(species))[[1]] %in% esm_to_do) {
-      to_do <- TRUE
+    st_status <- st$get(as.character(species))
+    if (st_status[[1]] %in% esm_to_do) {
+      if (length(st_status) > 1 && !is.null(st_status$esm)) {
+        to_do <- FALSE
+      } else {
+        to_do <- TRUE
+      }
     } else {
       to_do <- FALSE
     }
@@ -181,10 +186,12 @@ pmod <- function(species,
     ), silent = T)
     
     if (!inherits(fit_result, "try-error")) {
-      st$set(species, fit_result)
+      st$set(species, list(status = fit_result,
+                           esm = "tried"))
     } else {
       st$set(species, list(status = "failed",
-                      error = fit_result))
+                      error = fit_result, 
+                      esm = "tried"))
     }
   }
   
