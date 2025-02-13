@@ -318,8 +318,18 @@ get_protseas_cell <- function(protseas, resolution = 0.05) {
 
 
 ### Main richness function 
+# You will need this:
+# xr <- import("xarray")
+# da <- import("dask")
+# ri <- import("rioxarray")
+# np <- import("numpy")
+# dd <- import("dask.distributed")
+# client <- dd$Client()
+# browseURL(client$dashboard_link)
+
+
 # Create function for processing
-proc_maps <- function(index, batches, model, threshold_table, outfolder, group, scenario, results_folder, gen_cont = FALSE) {
+proc_maps_py <- function(index, batches, model, threshold_table, outfolder, group, scenario, results_folder, gen_cont = FALSE) {
   ids <- batches[[index]]
   
   if (!is.list(model)) {
@@ -427,5 +437,137 @@ proc_maps <- function(index, batches, model, threshold_table, outfolder, group, 
     non_binary_layer_sum_filled$rio$to_raster(gsub("binary", "cont", outf))
   }
   
+  return(outf)
+}
+
+
+
+#### New version
+proc_maps <- function(
+    index,
+    batches, # Recommended a maximum of 200 per batch
+    model,
+    threshold_table,
+    outfolder,
+    group,
+    scenario,
+    results_folder,
+    studyarea,
+    mask_layer,
+    save_parquet = TRUE,
+    max_mem = 0.06) {
+
+  terra::terraOptions(memfrac = max_mem)
+  
+  ids <- batches[[index]]
+
+  if (!is.list(model)) {
+    sel_threshold <- threshold_table[match(ids, threshold_table$taxonID, nomatch = 0), ]
+    if (!all.equal(sel_threshold$taxonID, ids)) stop("Problem with thresholds IDs")
+
+    sel_threshold <- pull(sel_threshold, model)
+    sel_threshold <- sel_threshold[!is.na(sel_threshold)]
+    if (length(sel_threshold) != length(ids)) stop("Problem with thresholds table")
+  } else {
+    model <- model[[index]]
+    if (length(ids) != length(model)) stop("Problem in valid models vector")
+
+    sel_threshold <- threshold_table[match(ids, threshold_table$taxonID, nomatch = 0), ]
+    if (!all.equal(sel_threshold$taxonID, ids)) stop("Problem with thresholds IDs")
+    sel_threshold <- unlist(lapply(1:nrow(sel_threshold), function(x) {
+      pull(sel_threshold, model[x])[x]
+    }))
+  }
+
+  # Load C++ function
+  Rcpp::sourceCpp("functions/classify_raster.cpp")
+
+  modelf <- ifelse(model == "rf",
+    "rf_classification_ds", model
+  )
+
+  studyarea <- terra::vect(studyarea)
+
+  raster_paths <- file.path(
+    results_folder,
+    glue::glue(
+      "taxonid={ids}/model=mpaeu/predictions/taxonid={ids}_model=mpaeu_method={modelf}_scen={scenario}_cog.tif"
+    )
+  )
+
+  mask_paths <- file.path(
+    results_folder,
+    glue::glue(
+      "taxonid={ids}/model=mpaeu/predictions/taxonid={ids}_model=mpaeu_mask_cog.tif"
+    )
+  )
+
+  # Open layers
+  rasters <- lapply(raster_paths, function(x){
+    rr <- terra::rast(x, lyrs = 1)
+    if (ext(rr) != ext(-180, 180, -90, 90)) {
+      rr <- extend(rr, ext(-180, 180, -90, 90))
+    }
+    rr
+  })
+  rasters <- terra::rast(rasters)
+  
+  masks <- lapply(mask_paths, function(x){
+    rr <- terra::rast(x, lyrs = mask_layer)
+    if (ext(rr) != ext(-180, 180, -90, 90)) {
+      rr <- extend(rr, ext(-180, 180, -90, 90))
+    }
+    rr
+  })
+  masks <- terra::rast(masks)
+  terra::NAflag(masks) <- 0
+  masks <- terra::mask(masks, studyarea)
+
+  rasters <- terra::crop(rasters, studyarea)
+  masks <- terra::crop(masks, studyarea)
+
+  dsr <- terra::sds(list(rasters, masks))
+
+  # Produce masked version
+  masked <- terra::app(dsr, prod)
+
+  # Produce continuous version
+  classified <- terra::app(masked,
+                           applyThreshold,
+                           thresholds = as.integer(as.vector(sel_threshold)))
+
+  # Produce binary version
+  binary <- terra::classify(classified, cbind(0, Inf, 1))
+  binary <- terra::as.int(binary)
+
+  group <- gsub("\\/", "-", group)
+
+  if (save_parquet) {
+    names(binary) <- paste0("taxonid=", ids)
+    binary_df <- as.data.frame(binary, xy = T)
+    #binary_df <- tidyr::pivot_longer(binary_df, 3:ncol(binary_df), names_to = "taxonid", values_to = "value")
+    arrow::write_parquet(
+      binary_df,
+      file.path(outfolder, paste0("richness_", group, "_", model, "_", scenario, "_binary_part", index, ".parquet"))
+    )
+    rm(binary_df)
+  }
+
+  # Sum results
+  classified <- classified/100
+  classified <- sum(classified, na.rm = TRUE)
+
+  binary <- sum(binary, na.rm = TRUE)
+
+  # Save results
+  if (length(model) > 1) {
+    model <- "combined"
+  }
+
+  outf <- file.path(outfolder, paste0("richness_", group, "_", model, "_", scenario, "_binary_part", index, ".tif"))
+
+  terra::writeRaster(binary, outf)
+  terra::writeRaster(classified, gsub("binary", "cont", outf))
+
   return(outf)
 }

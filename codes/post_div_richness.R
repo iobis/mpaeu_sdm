@@ -7,30 +7,29 @@
 #################### Diversity maps - richness and others ######################
 
 # Load packages/settings -----
-library(reticulate)
 library(progress)
 library(arrow)
 library(dplyr)
 library(terra)
+library(furrr)
 source("functions/post_div_functions.R")
 
 
-# Python modules
-xr <- import("xarray")
-da <- import("dask")
-ri <- import("rioxarray")
-np <- import("numpy")
-dd <- import("dask.distributed")
-client <- dd$Client()
-browseURL(client$dashboard_link)
-
 
 # Settings
-batch_size <- 50
+batch_size <- 200
 acro <- "mpaeu"
 results_folder <- "/data/scps/v3/results"
 outf <- "/data/scps/v3/diversity"
 fs::dir_create(outf)
+starea <- "data/shapefiles/mpa_europe_starea_v2.shp"
+# Mask target defines which type of mask to use
+# 1 = "native_ecoregions"; 2 = "fit_ecoregions"; 3 = "fit_region"; 
+# 4 = "convex_hull"; 5 = "minbounding_circle"; 6 = "buffer100m"
+mask_target <- 3
+# Number of cores for parallel processing
+n_cores <- 15
+plan(multisession, workers = n_cores)
 
 
 # List species
@@ -66,6 +65,9 @@ sp_status <- left_join(sp_status, groups)
 
 groups <- unique(groups$group)
 
+write_parquet(sp_status,
+              file.path(outf, glue::glue("metric=richness_model={acro}_what=splist.parquet")))
+
 
 # Get thresholds
 thresh_list <- c("p10", "mtp", "max_spec_sens")
@@ -85,7 +87,7 @@ thresholds <- bind_rows(thresholds)
 get_threshold <- function(metric) {
   thresholds %>%
     select(taxonID, model, all_of(metric)) %>%
-    tidyr::pivot_wider(names_from = "model", values_from = metric) %>%
+    tidyr::pivot_wider(names_from = "model", values_from = all_of(metric)) %>%
     mutate(across(2:ncol(.), ~ .x * 100))
 }
 
@@ -163,7 +165,7 @@ for (i in seq_along(models)) {
           stop("Threshold not recognized.")
         }
         
-        to_join <- purrr::map(
+        to_join <- future_map(
           seq_len(length(batches)),
           .f = proc_maps,
           batches = batches,
@@ -173,7 +175,10 @@ for (i in seq_along(models)) {
           group = tgg,
           scenario = tgs,
           results_folder = results_folder,
-          gen_cont = TRUE,
+          studyarea = starea,
+          mask_layer = mask_target,
+          save_parquet = TRUE,
+          max_mem = 0.6/n_cores,
           .progress = TRUE
         )
         
@@ -182,8 +187,6 @@ for (i in seq_along(models)) {
         if (is.null(to_join) || length(to_join) < 1) next
         
         all_layers <- rast(to_join)
-        
-        all_layers[all_layers == -1] <- NA
         
         if (nlyr(all_layers) > 1) {
           sum_layers <- app(all_layers, fun = sum, na.rm = T)
@@ -204,8 +207,6 @@ for (i in seq_along(models)) {
         
         all_layers_c <- rast(gsub("binary", "cont", to_join))
         
-        all_layers_c[all_layers_c == -1] <- NA
-        
         if (nlyr(all_layers_c) > 1) {
           sum_layers_c <- app(all_layers_c, fun = sum, na.rm = T)
         } else {
@@ -225,7 +226,32 @@ for (i in seq_along(models)) {
 
         obissdm::cogeo_optim(bin_outf)
         obissdm::cogeo_optim(cont_outf)
-        
+
+        # Aggregate parquets
+        if (file.exists(gsub("\\.tif", ".parquet", to_join)[1])) {
+          parquet_outf <- file.path(
+            outf,
+            glue::glue(
+              "metric=richness_model={acro}_method={tgm}_scen={tgs}_group={mtgg}_type={tgt}_bin.parquet"
+            )
+          )
+          for (pqf in seq_along(to_join)) {
+            if (pqf == 1) {
+              pq_exp <- arrow::read_parquet(gsub("\\.tif", ".parquet", to_join)[pqf])
+              pq_exp <- data.table::data.table(pq_exp)
+            } else {
+              pq_exp_pt <- arrow::read_parquet(gsub("\\.tif", ".parquet", to_join)[pqf])
+              pq_exp <- merge(pq_exp, pq_exp_pt, by = c("x", "y"), all = TRUE)
+              rm(pq_exp_pt)
+            }
+          }
+          fs::file_delete(gsub("\\.tif", ".parquet", to_join))
+          #ds <- arrow::open_dataset(gsub("\\.tif", ".parquet", to_join))
+          pq_exp |> arrow::write_parquet(sink = parquet_outf)
+          #rm(ds)
+          rm(pq_exp)
+        }
+
         fs::file_delete(to_join)
         fs::file_delete(gsub("binary", "cont", to_join))
       }
@@ -292,6 +318,4 @@ for (i in seq_along(models)) {
   }
 }
 
-write_parquet(sp_status,
-              file.path(outf, glue::glue("metric=richness_model={acro}_what=splist.parquet")))
 #END
