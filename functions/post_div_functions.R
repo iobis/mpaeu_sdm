@@ -566,8 +566,10 @@ proc_maps <- function(
 
   outf <- file.path(outfolder, paste0("richness_", group, "_", model, "_", scenario, "_binary_part", index, ".tif"))
 
-  terra::writeRaster(binary, outf)
-  terra::writeRaster(classified, gsub("binary", "cont", outf))
+  terra::writeRaster(binary, outf, overwrite = TRUE)
+  terra::writeRaster(classified, gsub("binary", "cont", outf), overwrite = TRUE)
+
+  terra::tmpFiles(current = TRUE, orphan = FALSE, old = FALSE, remove = TRUE)
 
   return(outf)
 }

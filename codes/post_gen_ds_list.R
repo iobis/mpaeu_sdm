@@ -9,6 +9,8 @@
 # Load packages/settings -----
 library(arrow)
 library(dplyr)
+version <- "1.0"
+cur_date <- format(Sys.Date(), "%Y-%m-%d")
 
 obis_ds <- "data/raw/obis_20240625.parquet"
 gbif_ds <- "data/raw/gbif_20240726/"
@@ -119,25 +121,33 @@ final_context_simp <- final_context |>
     mutate(Source = toupper(Source)) |> 
     mutate(Nodes = format_nodes(Nodes))
 
+jsonlite::write_json(list(
+    project = "MPA Europe",
+    creator = "OBIS",
+    version = version,
+    date = cur_date,
+    datasets = final_context_simp
+), "datasets_citation.json", pretty = TRUE)
 
-md_tab <- knitr::kable(final_context_simp)
 
-writeLines(
-    c(
-        "# Datasets used in MPA Europe SDMs",
-        "This work was conducted using data from OBIS and GBIF, encompassing thousands of datasets. 
-        We acknowledge the essential contributions of data providers who have made this information 
-        openly available through these platforms, as well as the extensive efforts of nodes in 
-        ensuring the data flow into the systems adheres to interoperable standards. 
-        Below is a list of all datasets utilized in this work. By following the provided links, 
-        you can find detailed information on how to cite each dataset. \n\n Note that there might be some duplicated
-        datasets, in case different names were used in both databases. 
-        Such duplicated data does not affect our analysis, since
-        this is filtered in the data-processing step. \n\n If a dataset is tagged in `Source` as `OBIS|GBIF`, that means that the dataset was identified both in OBIS and GBIF.
-        In that case, we provide the link for the OBIS version.", "",
-        md_tab
-    ),
-    con = "datasets.md"
-)
+# md_tab <- knitr::kable(final_context_simp)
+
+# writeLines(
+#     c(
+#         "# Datasets used in MPA Europe SDMs",
+#         "This work was conducted using data from OBIS and GBIF, encompassing thousands of datasets. 
+#         We acknowledge the essential contributions of data providers who have made this information 
+#         openly available through these platforms, as well as the extensive efforts of nodes in 
+#         ensuring the data flow into the systems adheres to interoperable standards. 
+#         Below is a list of all datasets utilized in this work. By following the provided links, 
+#         you can find detailed information on how to cite each dataset. \n\n Note that there might be some duplicated
+#         datasets, in case different names were used in both databases. 
+#         Such duplicated data does not affect our analysis, since
+#         this is filtered in the data-processing step. \n\n If a dataset is tagged in `Source` as `OBIS|GBIF`, that means that the dataset was identified both in OBIS and GBIF.
+#         In that case, we provide the link for the OBIS version.", "",
+#         md_tab
+#     ),
+#     con = "datasets.md"
+# )
 
 # END
