@@ -33,6 +33,7 @@ Cloning this repository and running the main codes will render a directory with 
     ├── requirements.R         : Project requirements
     ├── check.R                : Check project structure
     ├── sdm_conf.yml           : Configuration file for the models
+    ├── datasets_citation.json : Datasets from OBIS/GBIF used in the project
     │
     ├── data
     │   ├── raw                : Source data obtained from repositories (e.g. OBIS, GBIF)
@@ -105,3 +106,19 @@ Two files are saved on the root: 'taxonid={aphiaID}_model={acronym of model run}
 Some steps are controlled using [`storr`](https://richfitz.github.io/storr/). This will create `*_storr` folders, which you can later delete.
 
 If you experience any trouble using this resource, contact helpdesk@obis.org
+
+## Data sources and citation
+
+Modelling was done using data from OBIS (Ocean Biodiversity Information System) and GBIF (Global Biodiversity Information Facility). We acknowledge that this work was only possible duet to the contribution of data providers and the work of OBIS and GBIF nodes who ensured that data flowed to the central repositories. You can find the full list of datasets used in this work [here](https://iobis.github.io/mpaeu_docs/citations.html). When using range maps for a specific species, you can retrieve the datasets that contributed data for that species on our [Shiny application](https://shiny.obis.org/distmaps/). Those should be cited together with the product.
+
+Cite this product as:
+
+```
+Ocean Biodiversity information System (OBIS). (2024). Species distribution dashboard for MPA Europe. (version 0.1.0). https://shiny.obis.org/distmaps. Zenodo. https://doi.org/10.5281/zenodo.14524781
+
+GBIF.org (26 July 2024) GBIF Occurrence Data https://doi.org/10.15468/dl.ubwn8z
+
+OBIS (25 June 2024) OBIS Occurrence Snapshot. Ocean Biodiversity Information System. Intergovernmental Oceanographic Commission of UNESCO. https://obis.org.
+
+World Register of Marine Species. Available from https://www.marinespecies.org at VLIZ. Accessed 2024-05-01. doi:10.14284/170.
+```
