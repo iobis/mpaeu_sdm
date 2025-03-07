@@ -13,7 +13,11 @@ library(dplyr)
 library(terra)
 library(furrr)
 source("functions/post_div_functions.R")
-
+# Beta diversity
+# library(DBI)
+# library(duckdb)
+# library(adespatial)
+# library(betapart)
 
 
 # Settings
@@ -121,10 +125,11 @@ for (i in seq_along(models)) {
         cat("Combination - ", paste(tgm, tgg, tgs, tgt, sep = ":"), "\n\n")
         
         mtgg <- gsub('\\/', '-', tgg)
-        to_check <- file.path(outf, 
+        tc_tgm <- ifelse(tgm == "which_valid", "combined", tgm)
+        to_check <- tolower(file.path(outf, 
                               glue::glue(
-        "metric=richness_model={acro}_method={tgm}_scen={tgs}_group={mtgg}_type={tgt}_cont_cog.tif"
-                              ))
+        "metric=richness_model={acro}_method={tc_tgm}_scen={tgs}_group={mtgg}_type={tgt}_cont_cog.tif"
+                              )))
         if (file.exists(to_check)) {
           if (!force) {
             cat("Already done. Skipping.\n")
@@ -136,12 +141,14 @@ for (i in seq_along(models)) {
         
         if (tgm == "which_valid") {
           sel_ids <- sel_ids[, c("taxonID", tgm)]
-          tgm <- sel_ids[!is.na(sel_ids$which_valid), tgm]
+          tgm_ind <- sel_ids[!is.na(sel_ids$which_valid), tgm]
           sel_ids <- sel_ids[!is.na(sel_ids$which_valid), "taxonID"]
-          tgm <- split(tgm, ceiling(seq_along(sel_ids) / batch_size))
+          tgm_value <- split(tgm_ind, ceiling(seq_along(sel_ids) / batch_size))
+          tgm_name <- "combined"
         } else {
           sel_ids <- sel_ids[, c("taxonID", tgm)]
           sel_ids <- sel_ids[sel_ids[, tgm], "taxonID"]
+          tgm_value <- tgm_name <- tgm
         }
         
         if (length(sel_ids) < 1) next
@@ -169,7 +176,7 @@ for (i in seq_along(models)) {
           seq_len(length(batches)),
           .f = proc_maps,
           batches = batches,
-          model = tgm,
+          model = tgm_value,
           threshold_table = sel_th_table,
           outfolder = outf,
           group = tgg,
@@ -196,12 +203,12 @@ for (i in seq_along(models)) {
         
         sum_layers <- as.int(sum_layers)
 
-        bin_outf <- file.path(
+        bin_outf <- tolower(file.path(
           outf,
           glue::glue(
-            "metric=richness_model={acro}_method={tgm}_scen={tgs}_group={mtgg}_type={tgt}_bin.tif"
+            "metric=richness_model={acro}_method={tgm_name}_scen={tgs}_group={mtgg}_type={tgt}_bin.tif"
           )
-        )
+        ))
         
         writeRaster(sum_layers, bin_outf, overwrite = T)
         
@@ -215,12 +222,12 @@ for (i in seq_along(models)) {
         
         sum_layers_c <- round(sum_layers_c, 1)
 
-        cont_outf <- file.path(
+        cont_outf <- tolower(file.path(
           outf,
           glue::glue(
-            "metric=richness_model={acro}_method={tgm}_scen={tgs}_group={mtgg}_type={tgt}_cont.tif"
+            "metric=richness_model={acro}_method={tgm_name}_scen={tgs}_group={mtgg}_type={tgt}_cont.tif"
           )
-        )
+        ))
         
         writeRaster(sum_layers_c, cont_outf, overwrite = T)
 
@@ -229,12 +236,12 @@ for (i in seq_along(models)) {
 
         # Aggregate parquets
         if (file.exists(gsub("\\.tif", ".parquet", to_join)[1])) {
-          parquet_outf <- file.path(
+          parquet_outf <- tolower(file.path(
             outf,
             glue::glue(
-              "metric=richness_model={acro}_method={tgm}_scen={tgs}_group={mtgg}_type={tgt}_bin.parquet"
+              "metric=richness_model={acro}_method={tgm_name}_scen={tgs}_group={mtgg}_type={tgt}_bin.parquet"
             )
-          )
+          ))
           for (pqf in seq_along(to_join)) {
             if (pqf == 1) {
               pq_exp <- arrow::read_parquet(gsub("\\.tif", ".parquet", to_join)[pqf])
@@ -276,16 +283,9 @@ for (i in seq_along(models)) {
       cat("Processing threshold", tr, "out of", length(thresholds), "\n")
       cat("Combination - ", paste(tgm, tgs, tgt, sep = ":"), "\n\n")
 
-      fsel <- f[grepl(tgm, f)]       # Selected model
-      fsel <- fsel[grepl(tgs, fsel)] # Selected scenario
-      fsel <- fsel[grepl(tgt, fsel)] # Selected threshold
-
-      # Binary
-      fsel_bin <- fsel[grepl("_bin", fsel)]
-      
-      r_bin <- rast(fsel_bin)
-      r_bin <- sum(r_bin)
-      r_bin <- as.int(r_bin)
+      if (tgm == "which_valid") {
+        tgm <- "combined"
+      }
 
       bin_outf <- file.path(
           outf,
@@ -293,6 +293,25 @@ for (i in seq_along(models)) {
             "metric=richness_model={acro}_method={tgm}_scen={tgs}_group=all_type={tgt}_bin.tif"
           )
         )
+      
+      if (file.exists(gsub("_bin", "_bin_cog", bin_outf))) {
+        if (!force) {
+          cat("Already done. Skipping.\n")
+          next
+        }
+      }
+
+      fsel <- f[grepl(tgm, f)]       # Selected model
+      fsel <- fsel[grepl(tgs, fsel)] # Selected scenario
+      fsel <- fsel[grepl(tgt, fsel)] # Selected threshold
+      fsel <- fsel[grepl("\\.tif", fsel)] # Only rasters
+
+      # Binary
+      fsel_bin <- fsel[grepl("_bin", fsel)]
+      
+      r_bin <- rast(fsel_bin)
+      r_bin <- sum(r_bin, na.rm = TRUE)
+      r_bin <- as.int(r_bin)
 
       writeRaster(r_bin, bin_outf, overwrite = T)
 
@@ -300,7 +319,7 @@ for (i in seq_along(models)) {
       fsel_cont <- fsel[grepl("_cont", fsel)]
       
       r_cont <- rast(fsel_cont)
-      r_cont <- sum(r_cont)
+      r_cont <- sum(r_cont, na.rm = TRUE)
       r_cont <- round(r_cont, 1)
 
       cont_outf <- file.path(
@@ -318,4 +337,155 @@ for (i in seq_along(models)) {
   }
 }
 
-#END
+
+
+### Join full richness raw
+cat("\n\nCreating full richness maps based on raw data\n")
+base_rast <- "data/env/current/thetao_baseline_depthsurf_mean.tif"
+study_area <- "data/shapefiles/mpa_europe_starea_v2.shp"
+
+raw_proc <- lapply(unique(sp_status$group), raw_processing,
+                   sp_list = sp_status, base_raw = base_rast, study_area = study_area,
+                   output_folder = outf, acro = acro)
+
+raw_proc <- unlist(raw_proc, use.names = F)
+raw_proc <- gsub("\\.tif", "_cog.tif", raw_proc)
+
+original_layers <- rast(raw_proc)
+original_layers <- sum(original_layers, na.rm = TRUE)
+original_layers <- as.int(original_layers)
+
+aggregated_layers <- rast(gsub("original", "aggregated", raw_proc))
+aggregated_layers <- sum(aggregated_layers, na.rm = TRUE)
+aggregated_layers <- as.int(aggregated_layers)
+
+outraw <- file.path(outf, glue::glue(
+  "metric=richness_model={acro}_method=raw_scen=current_group=all_type=original.tif"
+))
+outrawagg <- file.path(outf, glue::glue(
+  "metric=richness_model={acro}_method=raw_scen=current_group=all_type=aggregated.tif"
+))
+
+writeRaster(original_layers, outraw, overwrite = T)
+writeRaster(aggregated_layers, outrawagg, overwrite = T)
+obissdm::cogeo_optim(outraw)
+obissdm::cogeo_optim(outrawagg)
+
+
+
+### Calculate LCBD
+# For later
+# r <- arrow::read_parquet("https://mpaeu-dist.s3.amazonaws.com/results/diversity/metric=richness_model=mpaeu_method=combined_scen=current_group=Annelida_type=mtp_bin.parquet")
+
+# get_betadiv <- function(div_file) {
+
+#   con <- dbConnect(duckdb::duckdb())
+
+#   n_count <- dbGetQuery(con, glue::glue("
+#     SELECT count(*) as total
+#     FROM read_parquet('{div_file}')
+#   ")) |> pull()
+
+#   batch_rows <- seq(1000, n_count, by = 1000)
+#   batch_rows <- c(0, batch_rows)
+
+#   lcbd <- numeric(n_count)
+
+#   pb <- progress::progress_bar$new(total = length(batch_rows))
+
+#   for (i in batch_rows) {
+#     pb$tick()
+#     batch <- dbGetQuery(con, glue::glue("
+#       SELECT *
+#       FROM read_parquet('{div_file}')
+#       OFFSET {i}
+#       LIMIT 1000
+#     "))
+#     batch <- data.table::data.table(batch)
+#     batch <- data.table::setnafill(batch, fill = 0)
+
+#     batch_coords <- batch[,1:2]
+#     batch_matrix <- batch[,3:ncol(batch)]
+
+#     beta_pred <- beta.div(batch_matrix)
+
+
+#   }
+  
+
+#   ds <- arrow::open_dataset(div_file)
+
+#   cli::cli_progress_step("Calculating Beta Diversity", spinner = T)
+#   beta_div <- ds |> 
+#     #slice_head(n = 500) |> 
+#     select(-1, -2) |> 
+#     map_batches(function(batch) {
+#       batch %>%
+#         as.data.frame() %>%
+#         data.table::data.table() %>%
+#         data.table::setnafill(fill = 0) %>%
+#         mutate(lcbd = calc_metrics(.)) %>%
+#         mutate(richness = rowSums(.[,1:(ncol(.)-1)])) %>%
+#         select(lcbd, richness) %>%
+#         as_record_batch()
+#     }) |> 
+#     collect()
+#   cli::cli_progress_done()
+
+#   row_total <- ds |> count() |> collect() |> pull()
+
+#   batches <- split(seq_len(row_total), ceiling(seq_len(row_total)/1000))
+#   if (length(batches[[length(batches)]]) < 2) {
+#     batches[[(length(batches)-1)]] <- c(
+#       batches[[(length(batches)-1)]] , batches[[length(batches)]]
+#     )
+#     batches[[length(batches)]] <- NULL
+#   }
+
+#   results <- lapply(seq_len(length(batches)), NULL)
+
+#   for (bt in seq_len(length(batches))) {
+#     div_matrix <- ds |> 
+#       slice(batches[[bt]])
+#     div_matrix <- data.table::data.table()
+#     div_matrix <- data.table::setnafill(div_matrix, fill = 0)
+
+#     div_coords <- div_matrix[,1:2]
+#     div_matrix <- div_matrix[,3:ncol(div_matrix)]
+
+#     y_sum <- rowSums(div_matrix, na.rm = T)
+
+#     div_matrix <- div_matrix[y_sum > 0,]
+
+#     batches <- split(seq_len(nrow(div_matrix)), ceiling(seq_len(nrow(div_matrix))/500))
+
+#     beta_pred <- beta.div(div_matrix[1:10,])
+#   }
+
+
+# }
+
+
+
+# #END
+# calc_metrics <- function(div_matrix) {
+#   beta.div(div_matrix)$LCBD
+# }
+
+
+
+# library(DBI)
+# library(duckdb)
+
+# # Connect to DuckDB (in-memory database for this example)
+# con <- dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+
+# # Query rows 100 to 1000 (using OFFSET 99 LIMIT 901)
+# df_subset <- dbGetQuery(con, "
+#   SELECT *
+#   FROM read_parquet('path/to/file.parquet')
+#   OFFSET 99
+#   LIMIT 901
+# ")
+
+# df_subset

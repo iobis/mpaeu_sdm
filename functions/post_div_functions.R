@@ -35,97 +35,109 @@ get_sp_list <- function() {
     return(sp_list)
 }
 
-raw_processing <- function(sp_list, gr, base_raw, output_folder, eez_cell, protseas_cell) {
+raw_processing <- function(gr, sp_list, base_raw, study_area, output_folder, acro, eez_cell = NULL, protseas_cell = NULL) {
+  
+  grsp_raw <- sp_list$taxonID[sp_list$group == gr]
+  #groups_sp[[gr]][["raw"]] <- grsp_raw
+  grsp_raw <- paste0("data/species/key=", grsp_raw, ".parquet")
+  grsp_raw <- grsp_raw[file.exists(grsp_raw)]
+  
+  cli::cli_alert_info("{length(grsp_raw)} species available for raw based join for group {gr}. Joining...")
+  base_raw <- terra::rast(base_raw)
+  study_area <- terra::vect(study_area)
 
-    grsp_raw <- sp_list$taxonID[sp_list$group == gr]
-    groups_sp[[gr]][["raw"]] <- grsp_raw
-    grsp_raw <- paste0("data/species/key=", grsp_raw, ".parquet")
-    grsp_raw <- grsp_raw[file.exists(grsp_raw)]
+  base_raw <- terra::classify(base_raw, cbind(-100, 100, 0))
 
-    cli::cli_alert_info("{length(grsp_raw)} species available for raw based join. Joining...")
-    gr_raw <- base_raw
-    gr_raw_agg <- terra::aggregate(base_raw, fact = 10)
+  gr_raw <- base_raw
+  gr_raw_agg <- terra::aggregate(base_raw, fact = 10, na.rm = T)
 
-    pt <- arrow::open_dataset(grsp_raw)
-    pt <- pt %>%
-        filter(data_type == "fit_points") %>%
-        select(decimalLongitude, decimalLatitude, taxonID) %>%
-        collect()
+  base_raw <- terra::mask(base_raw, study_area)
+  
+  pt <- arrow::open_dataset(grsp_raw)
+  pt <- pt %>%
+    filter(data_type == "fit_points") %>%
+    select(decimalLongitude, decimalLatitude, taxonID) %>%
+    collect()
+  
+  pt$cell <- cellFromXY(gr_raw, as.data.frame(pt[, c("decimalLongitude", "decimalLatitude")]))
+  pt_ed <- pt %>%
+    group_by(cell) %>%
+    distinct(taxonID) %>%
+    summarise(total = n())
+  
+  gr_raw[pt_ed$cell] <- pt_ed$total
+  
+  pt$cell <- NA
+  pt$cell <- cellFromXY(gr_raw_agg, as.data.frame(pt[, c("decimalLongitude", "decimalLatitude")]))
+  pt_ed <- pt %>%
+    group_by(cell) %>%
+    distinct(taxonID) %>%
+    summarise(total = n())
+  
+  gr_raw_agg[pt_ed$cell] <- pt_ed$total
+  
+  gr_raw <- as.int(gr_raw)
+  gr_raw_agg <- as.int(gr_raw_agg)
 
-    pt$cell <- cellFromXY(gr_raw, as.data.frame(pt[, c("decimalLongitude", "decimalLatitude")]))
-    pt_ed <- pt %>%
-        group_by(cell) %>%
-        distinct(taxonID) %>%
-        summarise(total = n())
-
-    gr_raw[pt_ed$cell] <- pt_ed$total
-
-    pt$cell <- NA
-    pt$cell <- cellFromXY(gr_raw_agg, as.data.frame(pt[, c("decimalLongitude", "decimalLatitude")]))
-    pt_ed <- pt %>%
-        group_by(cell) %>%
-        distinct(taxonID) %>%
-        summarise(total = n())
-
-    gr_raw_agg[pt_ed$cell] <- pt_ed$total
-
-    gr_raw <- as.int(gr_raw)
-    gr_raw_agg <- as.int(gr_raw_agg)
-
-    outraw <- glue(
-        "metric=richness_model={acro}_method=raw_scen=current_group={gsub('/', '-', tolower(gr))}_type=original.tif"
-    )
-    outrawagg <- glue(
-        "metric=richness_model={acro}_method=raw_scen=current_group={gsub('/', '-', tolower(gr))}_type=aggregated.tif"
-    )
-
-    if (terra::minmax(gr_raw_agg)[2, 1] <= 255) {
-        format_out <- "INT1U"
-    } else if (terra::minmax(gr_raw_agg)[2, 1] <= 65535) {
-        format_out <- "INT2U"
-    } else {
-        format_out <- "INT4U"
-    }
-
-    terra::writeRaster(gr_raw, file.path(output_folder, outraw), overwrite = T, datatype = format_out)
-    obissdm::cogeo_optim(file.path(output_folder, outraw))
-
-    terra::writeRaster(gr_raw_agg, file.path(output_folder, outrawagg), overwrite = T, datatype = format_out)
-    obissdm::cogeo_optim(file.path(output_folder, outrawagg))
-
-    # EEZ and ProtectedSeas
-    outeez <- glue(
-      "metric=richness_model={acro}_method=raw_scen=current_group={gsub('/', '-', tolower(gr))}_area=eez.txt"
-    )
-    
-    outprot <- glue(
-      "metric=richness_model={acro}_method=raw_scen=current_group={gsub('/', '-', tolower(gr))}_area=mpa.txt"
-    )
-    
-    pt$cell <- NA
-    pt$cell <- cellFromXY(gr_raw, as.data.frame(pt[, c("decimalLongitude", "decimalLatitude")]))
-    
-    pt_eez <- left_join(eez_cell, pt, relationship = "many-to-many")
-    
-    pt_eez_ed <- pt_eez %>%
-      filter(!is.na(taxonID)) %>%
-      group_by(MRGID) %>%
-      distinct(taxonID) %>%
-      summarise(total = n())
-    
-    write.table(pt_eez_ed, file.path(output_folder, outeez), row.names = F)
-    
-    pt_prot <- left_join(protseas_cell, pt, relationship = "many-to-many")
-    
-    pt_prot_ed <- pt_prot %>%
-      filter(!is.na(taxonID)) %>%
-      group_by(SITE_ID) %>%
-      distinct(taxonID) %>%
-      summarise(total = n())
-    
-    write.table(pt_prot_ed, file.path(output_folder, outprot), row.names = F)
-
-    return(invisible(NULL))
+  gr_raw <- terra::mask(gr_raw, base_raw)
+  base_raw <- terra::aggregate(base_raw, fact = 10, na.rm = T)
+  gr_raw_agg <- terra::mask(gr_raw_agg, base_raw)
+  
+  outraw <- glue::glue(
+    "metric=richness_model={acro}_method=raw_scen=current_group={gsub('/', '-', tolower(gr))}_type=original.tif"
+  )
+  outrawagg <- glue::glue(
+    "metric=richness_model={acro}_method=raw_scen=current_group={gsub('/', '-', tolower(gr))}_type=aggregated.tif"
+  )
+  
+  if (terra::minmax(gr_raw_agg)[2, 1] <= 255) {
+    format_out <- "INT1U"
+  } else if (terra::minmax(gr_raw_agg)[2, 1] <= 65535) {
+    format_out <- "INT2U"
+  } else {
+    format_out <- "INT4U"
+  }
+  
+  terra::writeRaster(gr_raw, file.path(output_folder, outraw), overwrite = T, datatype = format_out)
+  obissdm::cogeo_optim(file.path(output_folder, outraw))
+  
+  terra::writeRaster(gr_raw_agg, file.path(output_folder, outrawagg), overwrite = T, datatype = format_out)
+  obissdm::cogeo_optim(file.path(output_folder, outrawagg))
+  
+  # # EEZ and ProtectedSeas
+  # outeez <- glue(
+  #   "metric=richness_model={acro}_method=raw_scen=current_group={gsub('/', '-', tolower(gr))}_area=eez.txt"
+  # )
+  
+  # outprot <- glue(
+  #   "metric=richness_model={acro}_method=raw_scen=current_group={gsub('/', '-', tolower(gr))}_area=mpa.txt"
+  # )
+  
+  # pt$cell <- NA
+  # pt$cell <- cellFromXY(gr_raw, as.data.frame(pt[, c("decimalLongitude", "decimalLatitude")]))
+  
+  # pt_eez <- left_join(eez_cell, pt, relationship = "many-to-many")
+  
+  # pt_eez_ed <- pt_eez %>%
+  #   filter(!is.na(taxonID)) %>%
+  #   group_by(MRGID) %>%
+  #   distinct(taxonID) %>%
+  #   summarise(total = n())
+  
+  # write.table(pt_eez_ed, file.path(output_folder, outeez), row.names = F)
+  
+  # pt_prot <- left_join(protseas_cell, pt, relationship = "many-to-many")
+  
+  # pt_prot_ed <- pt_prot %>%
+  #   filter(!is.na(taxonID)) %>%
+  #   group_by(SITE_ID) %>%
+  #   distinct(taxonID) %>%
+  #   summarise(total = n())
+  
+  # write.table(pt_prot_ed, file.path(output_folder, outprot), row.names = F)
+  
+  # return(invisible(NULL))
+  return(file.path(output_folder, outraw))
 }
 
 
@@ -542,13 +554,17 @@ proc_maps <- function(
 
   group <- gsub("\\/", "-", group)
 
+  if (length(model) > 1) {
+    model <- "combined"
+  }
+
   if (save_parquet) {
     names(binary) <- paste0("taxonid=", ids)
     binary_df <- as.data.frame(binary, xy = T)
     #binary_df <- tidyr::pivot_longer(binary_df, 3:ncol(binary_df), names_to = "taxonid", values_to = "value")
     arrow::write_parquet(
       binary_df,
-      file.path(outfolder, paste0("richness_", group, "_", model, "_", scenario, "_binary_part", index, ".parquet"))
+      tolower(file.path(outfolder, paste0("richness_", group, "_", model, "_", scenario, "_binary_part", index, ".parquet")))
     )
     rm(binary_df)
   }
@@ -560,11 +576,7 @@ proc_maps <- function(
   binary <- sum(binary, na.rm = TRUE)
 
   # Save results
-  if (length(model) > 1) {
-    model <- "combined"
-  }
-
-  outf <- file.path(outfolder, paste0("richness_", group, "_", model, "_", scenario, "_binary_part", index, ".tif"))
+  outf <- tolower(file.path(outfolder, paste0("richness_", group, "_", model, "_", scenario, "_binary_part", index, ".tif")))
 
   terra::writeRaster(binary, outf, overwrite = TRUE)
   terra::writeRaster(classified, gsub("binary", "cont", outf), overwrite = TRUE)
