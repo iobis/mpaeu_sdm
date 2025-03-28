@@ -61,7 +61,7 @@ species_list <- recent_file("data", "all_splist")
 # Run in parallel? For avoiding parallel, change both to FALSE
 run_parallel <- ifelse(length(sel_species) > 1 | sel_species == "all", TRUE, FALSE)[1]
 # Number of cores for parallel processing
-n_cores <- 4
+n_cores <- 40
 # Maximum memory used by `terra`
 max_mem <- (0.9/n_cores)
 
@@ -70,8 +70,11 @@ max_mem <- (0.9/n_cores)
 algos <- c("maxent", "rf", "xgboost")
 # Personalized options
 algo_opts <- obissdm::sdm_options()[algos]
+algo_opts$maxent$features <- c("lq", "h")
+algo_opts$maxent$remult <- seq_len(4)
 algo_opts$xgboost$gamma <- c(0, 4)
 algo_opts$xgboost$shrinkage <- c(0.1, 0.3)
+algo_opts$xgboost$scale_pos_weight <- c("balanced", "equal")
 # Should areas be masked by the species depth?
 limit_by_depth <- TRUE
 # A buffer to be applied to the depth limitation

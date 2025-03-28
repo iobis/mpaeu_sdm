@@ -176,6 +176,8 @@ model_species <- function(species,
     env <- prep_eco$env
     model_log <- prep_eco$model_log
     bath_pts <- prep_eco$bath_pts
+    ecoreg_occ <- prep_eco$ecoreg_occ
+    ecoreg_sel <- prep_eco$ecoreg_sel
     rm(prep_eco)
     
     # Check if species is from shallow/coastal areas and remove distcoast/bathymetry
@@ -190,21 +192,21 @@ model_species <- function(species,
     if (inherits(fit_pts_sac, "try-error")) {
       fit_pts_sac <- fit_pts
     } 
-    
+
     # Make data object
-    quad_n <- .cm_calc_quad(env, quad_samp)
+    quad_n <- .cm_calc_quad(env, quad_samp, fit_pts_sac)
     model_log$model_details$background_size <- quad_n 
-    
+
     sp_data <- mp_prepare_data(fit_pts_sac, eval_data = eval_pts,
                                species_id = species_name,
                                env_layers = env$layers,
                                quad_number = quad_n,
                                verbose = verb_2)
-    
+
     block_grid <- get_block_grid(sp_data, env$layers,
                                  sel_vars = env$hypothesis$basevars,
                                  verbose = verb_2)
-    
+
     sp_data <- mp_prepare_blocks(sp_data,
                                  method = "manual",
                                  block_types = "spatial_grid",
@@ -220,7 +222,7 @@ model_species <- function(species,
     model_log$model_details$block_size <- unname(sp_data$blocks$grid_resolution)
     model_log$model_fit_points <- sum(sp_data$training$presence)
     model_log$model_eval_points <- sum(sp_data$eval_data$presence)
-    
+
     treg <- obissdm::.get_time(treg, "Data preparing")
     
     # PART 3: ASSESS SPATIAL BIAS ----
@@ -259,7 +261,7 @@ model_species <- function(species,
     
     # PART 5: FIT MODELS ----
     if (verb_1) cli::cli_alert_info("Starting model fitting")
-    fit_obj <- .cm_model_fit(algorithms, algo_opts,
+    fit_obj <- .cm_model_fit(algorithms, algo_opts, sp_data,
                              model_log, verb_1, verb_2)
     model_fits <- fit_obj$fits
     model_log <- fit_obj$logs
@@ -278,169 +280,8 @@ model_species <- function(species,
         model_predictions <- .cm_predict_models(good_models, model_fits, 
                                                 multi_mod, pred_out, group, 
                                                 hab_depth, sp_data, outfolder, 
-                                                outacro, species, verb_1, 
-                                                verb_2)
-
-        model_predictions <- lapply(good_models, function(id) {
-          model_name <- model_fits[[id]]$name
-          if (verb_1) cli::cli_alert_info("Predicting model {id} - {model_name}")
-          
-          best_hyp <- multi_mod$best_model
-          
-          if (!dir.exists(pred_out)) fs::dir_create(pred_out)
-          
-          outmess <- paste0(pred_out, "taxonid=", species, "_model=", outacro, "_what=mess.tif")
-          outshape <- paste0(pred_out, "taxonid=", species, "_model=", outacro, "_what=shape.tif")
-          
-          if (!file.exists(gsub("mess", "mess_cog", outmess))) {do_shape <- do_mess <- TRUE} else {do_shape <- do_mess <- FALSE} 
-          
-          scenarios <- data.frame(
-            scenario = c("current", rep(c("ssp126", "ssp245", "ssp370", "ssp460", "ssp585"),
-                                        each = 2)),
-            year = c(NA, rep(c("dec50", "dec100"), 5))
-          )
-          # Reduced for testings
-          # scenarios <- data.frame(scenario = c("current", "ssp126"), year = c(NA,"dec50"))
-          # scenarios <- data.frame(scenario = c("current"), year = c(NA))
-          
-          for (k in 1:nrow(scenarios)) {
-            
-            if (is.na(scenarios$year[k])) {
-              period <- NULL
-            } else {
-              period <- scenarios$year[k]
-            }
-            
-            if (verb_1) cli::cli_alert_info("Predicting scenario {k} of {nrow(scenarios)}.")
-            outpred <- paste0(pred_out, "taxonid=", species, "_model=", outacro,
-                              "_method=", model_name, "_scen=", scenarios$scenario[k],
-                              ifelse(is.null(period), "", paste0("_", period)), ".tif")
-            
-            env_to_pred <- obissdm::get_envofgroup(group,
-                                                   depth = hab_depth, load_all = F,
-                                                   scenario = scenarios$scenario[k],
-                                                   period = period,
-                                                   hypothesis = best_hyp,
-                                                   env_folder = "data/env",
-                                                   conf_file = "sdm_conf.yml", 
-                                                   verbose = verb_2)
-            env_to_pred <- terra::subset(env_to_pred, colnames(sp_data$training)[-1])
-
-            if (best_hyp == "coastal") {
-              env_to_pred <- terra::mask(terra::crop(env_to_pred, env$layers[[1]]), env$layers[[1]])
-            }
-            
-            pred <- predict(model_fits[[id]], env_to_pred)
-            
-            names(pred) <- paste0(scenarios$scenario[k], ifelse(is.null(period), "", paste0("_", period)))
-            
-            pred <- pred * 100
-            pred <- as.int(pred)
-            writeRaster(pred, outpred, overwrite = T, datatype = "INT1U")
-            cogeo_optim(outpred)
-            
-            if (k == 1) {
-              pred_f <- pred
-            }
-            
-            if (do_mess) {
-              # Save MESS
-              if (verb_1) cli::cli_alert_info("Generating MESS map.")
-              if (best_hyp == "coastal") { 
-                to_mess <- terra::aggregate(env_to_pred, 12, na.rm = T)
-              } else {
-                to_mess <- terra::aggregate(env_to_pred, 12)
-              }
-              mess_map <- ecospat::ecospat.mess(
-                na.omit(as.data.frame(to_mess, xy = T)),
-                cbind(sp_data$coord_training, sp_data$training[,2:ncol(sp_data$training)]))
-              mess_map_t <- to_mess[[1]]
-              mess_map_t[] <- NA
-              mess_map_t[cellFromXY(mess_map_t, mess_map[,1:2])] <- mess_map[,5]
-              mess_map <- mess_map_t
-              
-              names(mess_map) <- names(pred) <- paste0(scenarios$scenario[k], ifelse(is.null(period), "", paste0("_", period)))
-              
-              if (k == 1) {
-                pred_mess <- mess_map
-              } else {
-                pred_mess <- c(pred_mess, mess_map)
-              }
-            }
-            
-            if (do_shape) {
-              if (verb_1) cli::cli_alert_info("Generating SHAPE map.")
-              # Reduce dataset for faster implementing
-              shape_data <- sp_data$training
-              which_p <- which(shape_data$presence == 1)
-              if (sum(shape_data$presence) > 1000) {
-                which_p <- sample(which_p, 1000)
-              }
-              which_a <- sample(which(shape_data$presence == 0), 1000)
-              shape_data <- shape_data[c(which_p, which_a),]
-              shape_data_coords <- sp_data$coord_training[c(which_p, which_a),]
-              names(shape_data_coords) <- c("x", "y")
-              
-              shape_res <- try(flexsdm::extra_eval(
-                shape_data,
-                "presence",
-                projection_data = env_to_pred,
-                aggreg_factor = 12 # For faster implementing
-              ), silent = T)
-              
-              if (!inherits(shape_res, "try-error")) {
-                
-                if (k == 1) {
-                  outpath_fig <- paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/figures/")
-                  if (!dir.exists(outpath_fig)) fs::dir_create(outpath_fig)
-                  outfile_fig <- paste0(outpath_fig,
-                                        "taxonid=", species, "_model=", outacro, "_method=", model_name,
-                                        "_what=shape.png")
-                  shape_plot <- suppressMessages(
-                    try(flexsdm::p_extra(
-                      training_data = cbind(shape_data_coords, shape_data),
-                      pr_ab = "presence",
-                      extra_suit_data = terra::aggregate(shape_res, 12),
-                      projection_data = terra::aggregate(env_to_pred, 12),
-                      geo_space = TRUE,
-                      prop_points = 0.05,
-                      alpha_p = 0.2
-                    ), silent = T)
-                  )
-                  
-                  ragg::agg_png(outfile_fig, width = 6, height = 2.5, units = "in", res = 300, scaling = 0.4)
-                  print(shape_plot)
-                  dof <- dev.off()
-                  rm(dof, shape_plot)
-                }
-                
-                shape_res <- aggregate(shape_res, fact = 12)
-                shape_res <- as.int(shape_res)
-                names(shape_res) <- paste0(scenarios$scenario[k], ifelse(is.null(period), "", paste0("_", period)))
-                
-                if (k == 1) {
-                  pred_shape <- shape_res
-                } else {
-                  pred_shape <- c(pred_shape, shape_res)
-                }
-              }
-            }
-            
-          }
-          
-          if (do_mess) {
-            pred_mess <- as.int(pred_mess)
-            writeRaster(pred_mess, outmess, overwrite = T, datatype = "INT1U")
-            cogeo_optim(outmess)
-          }
-          if (do_shape) {
-            writeRaster(pred_shape, outshape, overwrite = T, datatype = "INT2U")
-            cogeo_optim(outshape)
-          }
-          
-          return(pred_f)
-          
-        })
+                                                outacro, species, env,
+                                                verb_1, verb_2)
         
         treg <- obissdm::.get_time(treg, "Model prediction")
         
@@ -476,7 +317,7 @@ model_species <- function(species,
           ens_obj <- .cm_ensemble_models(
             species, good_models, algorithms, outfolder,
             sp_data, model_fits, metric_out,
-            pred_out, outacro, model_log, verb_1
+            pred_out, outacro, model_log, model_predictions, verb_1
           )
           model_predictions <- ens_obj$preds
           model_log <- ens_obj$logs
@@ -486,8 +327,9 @@ model_species <- function(species,
 
         # PART 9: SAVE BINARIZATION INFO ----
         if (verb_1) cli::cli_alert_info("Saving binarization info")
-        .cm_save_bin_info(model_predictions, sp_data, algorithms, good_models,
-                          metric_out, species, outacro)
+        thresh_p10_mtp <- .cm_save_bin_info(model_predictions, sp_data, 
+                                            algorithms, good_models,
+                                            metric_out, species, outacro)
 
 
         # PART 10: CREATE MASKS AND SAVE ----
@@ -495,7 +337,7 @@ model_species <- function(species,
         .cm_save_masks(
           ecoreg_occ, ecoreg_sel, multi_mod,
           env, model_predictions, sp_data,
-          pred_out, species, outacro
+          pred_out, species, outacro, coord_names
         )
         treg <- obissdm::.get_time(treg, "Masks")
 
@@ -511,7 +353,7 @@ model_species <- function(species,
           thresh_p10_mtp, algorithms, hab_depth,
           good_models, model_log, metric_out,
           species, outacro,
-          model_varimport, env
+          model_varimport, env, verb_1
         )
         treg <- obissdm::.get_time(treg, "Post-evaluation")
 
@@ -531,7 +373,7 @@ model_species <- function(species,
         }
         
         # Save models
-        .cm_save_models(model_fits, outfolder, species, outacro)
+        .cm_save_models(model_fits, outfolder, species, outacro, good_models)
         
         # Save fit points
         arrow::write_parquet(sp_data$coord_training[sp_data$training$presence == 1,],

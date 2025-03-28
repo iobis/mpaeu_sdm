@@ -6,7 +6,7 @@
 # YAML files use the identation to establish list levels, so it's important to keep it consistent
 # Don't use tabulation, use 2 spaces instead.
 #
-# File version: 3 (2024-06-03)
+# File version: 4 (2025-03-28)
 ---
 # Fill here with the conditions to get the groups.
 # For example, the group photosynthesizers have to met the condition
@@ -36,94 +36,102 @@ groups:
 variables:
   seabirds:
     basevars:
-      - tas_mean
+      - tas_min
       - siconc_max
-      - thetao_mean
-      - bathymetry_mean
-      - distcoast
+      - thetao_min
+      #- bathymetry_mean
+      #- distcoast
       - sws_max
     coastal:
-      - tas_mean
+      - tas_min
       - siconc_max
-      - thetao_mean
-      - bathymetry_mean
-      - distcoast
+      - thetao_min
+      #- bathymetry_mean
+      #- distcoast
       - sws_max
       - wavefetch
   photosynthesizers:
     basevars:
-      - thetao_mean
-      - bathymetry_mean
-      - distcoast
+      - thetao_min
+      #- bathymetry_mean
+      #- distcoast
       - sws_max
       - so_min
-      - no3_mean
-      - par_mean
+      - no3_min
+      - par_min
     coastal:
-      - thetao_mean
-      - bathymetry_mean
-      - distcoast
+      - thetao_min
+      #- bathymetry_mean
+      #- distcoast
       - sws_max
       - so_min
-      - no3_mean
-      - par_mean
+      - no3_min
+      - par_min
       - wavefetch
       #- slope
       - rugosity
     complexity:
-      - thetao_mean
-      - bathymetry_mean
-      - distcoast
+      - thetao_min
+      #- bathymetry_mean
+      #- distcoast
       - sws_max
       - so_min
-      - no3_mean
-      - par_mean
+      - no3_min
+      - par_min
       #- slope
       - rugosity
   mammals:
     basevars:
       - siconc_max
-      - thetao_mean
-      - bathymetry_mean
-      - distcoast
+      - thetao_min
+      #- bathymetry_mean
+      #- distcoast
       - sws_max
-      - so_mean
+      - so_min
     coastal:
       - siconc_max
-      - thetao_mean
-      - bathymetry_mean
-      - distcoast
+      - thetao_min
+      #- bathymetry_mean
+      #- distcoast
       - sws_max
-      - so_mean
+      - so_min
       - wavefetch
+    complexity:
+      - siconc_max
+      - thetao_min
+      #- bathymetry_mean
+      #- distcoast
+      - sws_max
+      - so_min
+      - rugosity
   others:
     basevars:
-      - thetao_mean
+      - thetao_min
       - thetao_range
-      - bathymetry_mean
-      - distcoast
+      #- bathymetry_mean
+      #- distcoast
       - sws_max
-      - so_mean
-      - o2_mean
+      - so_min
+      - o2_min
     coastal:
-      - thetao_mean
+      - thetao_min
       - thetao_range
-      - bathymetry_mean
-      - distcoast
+      #- bathymetry_mean
+      #- distcoast
       - sws_max
-      - so_mean
-      - o2_mean
+      - so_min
+      - o2_min
       - wavefetch
       - rugosity
       #- slope
     complexity:
-      - thetao_mean
+      - thetao_min
       - thetao_range
-      - bathymetry_mean
-      - distcoast
+      #- bathymetry_mean
+      #- distcoast
       - sws_max
-      - so_mean
-      - o2_mean
+      - so_min
+      - o2_min
       - rugosity
       #- slope
 # END of configuration file

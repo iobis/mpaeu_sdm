@@ -58,32 +58,44 @@
 .cm_check_coastal <- function(species_data, env, coord_names, verbose) {
   
   if ("coastal" %in% names(env$hypothesis)) {
-    # Test if is within europe/coastal
-    europe_starea <- terra::vect("data/shapefiles/mpa_europe_starea_v2.shp")
-    europe_starea <- terra::ext(europe_starea)
+    # # Test if is within europe/coastal
+    # europe_starea <- terra::vect("data/shapefiles/mpa_europe_starea_v2.shp")
+    # europe_starea <- terra::ext(europe_starea)
     
-    is_within <- terra::is.related(terra::vect(species_data[,coord_names], geom = coord_names),
-                            europe_starea, "intersects")
-    if (!all(is_within)) {
+    # is_within <- terra::is.related(terra::vect(species_data[,coord_names], geom = coord_names),
+    #                         europe_starea, "intersects")
+    # if (!all(is_within)) {
+    #   env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
+    #   env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
+    #   if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded")
+    # } else {
+      
+    #   wave <- terra::rast("data/env/terrain/wavefetch.tif")
+    #   wave_pts <- terra::extract(wave, species_data[,coord_names])
+      
+    #   if (sum(is.na(wave_pts[,2])) > ceiling(nrow(species_data) * .05)) {
+    #     env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
+    #     env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
+    #     if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded")
+    #   } else if ((nrow(species_data) - sum(is.na(wave_pts[,2]))) < 15) {
+    #     env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
+    #     env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
+    #     if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded")
+    #   } else {
+    #     env$layers <- terra::crop(env$layers, europe_starea)
+    #   }
+    # }
+    wave <- terra::rast("data/env/terrain/wavefetch.tif")
+    wave_pts <- terra::extract(wave, species_data[,coord_names])
+    
+    if (sum(is.na(wave_pts[,2])) > ceiling(nrow(species_data) * .05)) {
       env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
       env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
-      if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded")
-    } else {
-      
-      wave <- terra::rast("data/env/terrain/wavefetch.tif")
-      wave_pts <- terra::extract(wave, species_data[,coord_names])
-      
-      if (sum(is.na(wave_pts[,2])) > ceiling(nrow(species_data) * .05)) {
-        env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
-        env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
-        if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded")
-      } else if ((nrow(species_data) - sum(is.na(wave_pts[,2]))) < 15) {
-        env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
-        env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
-        if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded")
-      } else {
-        env$layers <- terra::crop(env$layers, europe_starea)
-      }
+      if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded. Too many points out of area.")
+    } else if ((nrow(species_data) - sum(is.na(wave_pts[,2]))) < 15) {
+      env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
+      env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
+      if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded. Final points would be less than 15.")
     }
   }
   
@@ -165,7 +177,9 @@
   return(list(
     env = env,
     model_log = model_log,
-    bath_pts = bath_pts
+    bath_pts = bath_pts,
+    ecoreg_occ = ecoreg_occ,
+    ecoreg_sel = ecoreg_sel
   ))
 }
 
@@ -186,7 +200,7 @@
 }
 
 # Calculate quad samp -----
-.cm_calc_quad <- function(env, quad_samp) {
+.cm_calc_quad <- function(env, quad_samp, fit_pts_sac) {
   env_size_t <- nrow(as.data.frame(env$layers, xy = T, na.rm = T))
   if (quad_samp <= 1 && quad_samp > 0) {
     quad_samp <- ceiling(env_size_t * quad_samp)
@@ -284,7 +298,7 @@
 
 
 # Fit model -----
-.cm_model_fit <- function(algorithms, algo_opts,
+.cm_model_fit <- function(algorithms, algo_opts, sp_data,
                           model_log, verb_1, verb_2) {
   if (!is.null(algo_opts)) {
     algo_opts <- algo_opts[algorithms]
@@ -349,7 +363,7 @@
 # Predict models ----
 .cm_predict_models <- function(good_models, model_fits, multi_mod,
                                pred_out, group, hab_depth,
-                               sp_data, outfolder, outacro, species,
+                               sp_data, outfolder, outacro, species, env,
                                verb_1, verb_2) {
   lapply(good_models, function(id) {
     model_name <- model_fits[[id]]$name
@@ -375,7 +389,7 @@
       year = c(NA, rep(c("dec50", "dec100"), 5))
     )
     # Reduced for testings
-    scenarios <- data.frame(scenario = c("current", "ssp126"), year = c(NA,"dec50"))
+    # scenarios <- data.frame(scenario = c("current", "ssp126"), year = c(NA,"dec50"))
     # scenarios <- data.frame(scenario = c("current"), year = c(NA))
 
     for (k in seq_len(nrow(scenarios))) {
@@ -593,7 +607,7 @@
 
 .cm_ensemble_models <- function(species, good_models, algorithms, outfolder, 
                                 sp_data, model_fits, metric_out,
-                                pred_out, outacro, model_log, verb_1) {
+                                pred_out, outacro, model_log, model_predictions, verb_1) {
   if (verb_1) cli::cli_alert_info("Enough number of models, ensembling")
 
   to_ensemble <- list.files(paste0(outfolder, "/taxonid=", species, "/model=", outacro, "/predictions/"),
@@ -792,14 +806,14 @@
                                 "taxonid=", species, "_model=", outacro,
                                 "_what=thresholds.parquet"))
 
-  return(invisible(NULL))
+  return(thresh_p10_mtp)
 }
 
 
 # Save masks ------
 .cm_save_masks <- function(ecoreg_occ, ecoreg_sel, multi_mod, 
                            env, model_predictions, sp_data,
-                           pred_out, species, outacro) {
+                           pred_out, species, outacro, coord_names) {
   # Get base raster
   base_layer <- rast("data/env/terrain/bathymetry_mean.tif")
   base_layer[!is.na(base_layer)] <- 1
@@ -970,7 +984,7 @@
   if (n_vars > nrow(vars)) {
     n_vars <- nrow(vars)
   } else if (n_vars < 2) {
-    n_vars < 2
+    n_vars <- 2
   }
   
   vars <- vars$variable[seq_along(n_vars)]
@@ -1132,7 +1146,7 @@
                              thresh_p10_mtp, algorithms, hab_depth,
                              good_models, model_log, metric_out,
                              species, outacro,
-                             model_varimport, env) {
+                             model_varimport, env, verb_1) {
   
   if ("sst" %in% post_eval) {
     if (verb_1) cli::cli_inform(c(">" = "Performing SST post-evaluation"))
@@ -1270,7 +1284,7 @@
 
 
 # Save models
-.cm_save_models <- function(model_fits, outfolder, species, outacro) {
+.cm_save_models <- function(model_fits, outfolder, species, outacro, good_models) {
   lapply(good_models, function(id) {
     model_name <- model_fits[[id]]$name
 
