@@ -17,13 +17,13 @@ set.seed(2023)
 # List and load environmental layers ----
 env_vars <- c("thetao-mean", "sws-mean", "so-mean", "o2-mean")
 
-curr <- load_env(env_vars, terrain_vars = c("bathymetry_mean", "distcoast"))
-ssp1 <- load_env(env_vars, scenario = "ssp126", terrain_vars = c("bathymetry_mean", "distcoast"))
-ssp5 <- load_env(env_vars, scenario = "ssp585", terrain_vars = c("bathymetry_mean", "distcoast"))
+curr <- load_env(env_vars, terrain_vars = c("bathymetry_mean"))
+ssp1 <- load_env(env_vars, scenario = "ssp126", terrain_vars = c("bathymetry_mean"))
+ssp5 <- load_env(env_vars, scenario = "ssp585", terrain_vars = c("bathymetry_mean"))
 
 # Load study area shapefile
-starea <- vect("data/shapefiles/mpa_europe_starea_v2.shp")
-exp_starea <- vect("data/shapefiles/mpa_europe_extarea_allatl_v2.shp")
+starea <- vect("data/shapefiles/mpa_europe_starea_v3.gpkg")
+exp_starea <- vect("data/shapefiles/mpa_europe_extarea_allatl_v3.gpkg")
 
 # # Crop to the expanded area
 # sampling_area <- crop(curr[[1]], exp_starea)
@@ -32,9 +32,10 @@ exp_starea <- vect("data/shapefiles/mpa_europe_extarea_allatl_v2.shp")
 # sampling_area <- as.polygons(sampling_area)
 
 # Create a bias layer that will give higher probability of sampling in shallow areas
-bias_layer <- curr$bathymetry_mean
-bias_layer[bias_layer >= -200] <- 1
-bias_layer[bias_layer < -200] <- 0.5
+# bias_layer <- curr$bathymetry_mean
+# bias_layer[bias_layer >= -200] <- 1
+# bias_layer[bias_layer < -200] <- 0.5
+bias_layer <- rast("data/virtual_species/sampling_effort.tif")
 
 # Load Gaussian field layer
 gaus_rast <- rast("data/virtual_species/gaussian_field_layer.tif")
@@ -59,9 +60,8 @@ vsp1_funs <- virtualspecies::formatFunctions(
   thetao_mean = c(fun = "dnorm", mean = 12, sd = 6),
   sws_mean = c(fun = "dnorm", mean = 0.02, sd = 0.1),
   so_mean = c(fun = "dnorm", mean = 38, sd = 8),
-  o2_mean = c(fun = "dnorm", mean = 300, sd = 50),
-  coastdist = c(fun = "dnorm", mean = 0, sd = 200),
-  bathymetry_mean = c(fun = "dnorm", mean = 0, sd = 400)
+  o2_mean = c(fun = "dnorm", mean = 400, sd = 100),
+  bathymetry_mean = c(fun = "dnorm", mean = 0, sd = 150)
 )
 
 # VSP2: coastal species, not all variables known
@@ -70,9 +70,8 @@ vsp2_funs <- virtualspecies::formatFunctions(
   thetao_mean = c(fun = "dnorm", mean = 12, sd = 6),
   sws_mean = c(fun = "dnorm", mean = 0.02, sd = 0.1),
   so_mean = c(fun = "dnorm", mean = 38, sd = 8),
-  o2_mean = c(fun = "dnorm", mean = 300, sd = 50),
-  coastdist = c(fun = "dnorm", mean = 0, sd = 200),
-  bathymetry_mean = c(fun = "dnorm", mean = 0, sd = 400),
+  o2_mean = c(fun = "dnorm", mean = 400, sd = 100),
+  bathymetry_mean = c(fun = "dnorm", mean = 0, sd = 150),
   random_gauss = c(fun = "dnorm", mean = 0.5, sd = 0.2)
 )
 
@@ -93,10 +92,9 @@ gen_vsp(layers_2, vsp2_funs, vsp_name = "Virtual species 2",
 vsp3_funs <- virtualspecies::formatFunctions(
   layers_1,
   thetao_mean = c(fun = "dnorm", mean = 20, sd = 10),
-  sws_mean = c(fun = "dnorm", mean = 0, sd = 2),
+  sws_mean = c(fun = "dnorm", mean = 0.02, sd = 0.1),
   so_mean = c(fun = "dnorm", mean = 30, sd = 10),
-  o2_mean = c(fun = "dnorm", mean = 300, sd = 60),
-  coastdist = c(fun = "dnorm", mean = 0, sd = 2500),
+  o2_mean = c(fun = "dnorm", mean = 400, sd = 100),
   bathymetry_mean = c(fun = "dnorm", mean = 0, sd = 2000)
 )
 
@@ -104,10 +102,9 @@ vsp3_funs <- virtualspecies::formatFunctions(
 vsp4_funs <- virtualspecies::formatFunctions(
   layers_2,
   thetao_mean = c(fun = "dnorm", mean = 20, sd = 10),
-  sws_mean = c(fun = "dnorm", mean = 0, sd = 2),
+  sws_mean = c(fun = "dnorm", mean = 0.02, sd = 0.1),
   so_mean = c(fun = "dnorm", mean = 30, sd = 10),
-  o2_mean = c(fun = "dnorm", mean = 300, sd = 60),
-  coastdist = c(fun = "dnorm", mean = 0, sd = 2500),
+  o2_mean = c(fun = "dnorm", mean = 400, sd = 100),
   bathymetry_mean = c(fun = "dnorm", mean = 0, sd = 2000),
   random_gauss = c(fun = "dnorm", mean = 0.5, sd = 0.2)
 )

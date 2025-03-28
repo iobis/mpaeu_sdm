@@ -32,7 +32,7 @@ start_time <- Sys.time()
 # This file can also be run as "source". In that case, the default objects
 # are used. To enable also a more flexible run, for testing purposes, three 
 # arguments can be override by creating the objects on the environment before. 
-# `Those are outfolder`, `outacro`, and `sel_species`. The latter have as 
+# Those are `outfolder`, `outacro`, and `sel_species`. The latter have as 
 # default the value "all", what means that all species in the species list will 
 # be modeled. Supplying a vector of AphiaID will filter the species based on the
 # supplied values.
@@ -62,6 +62,8 @@ species_list <- recent_file("data", "all_splist")
 run_parallel <- ifelse(length(sel_species) > 1 | sel_species == "all", TRUE, FALSE)[1]
 # Number of cores for parallel processing
 n_cores <- 4
+# Maximum memory used by `terra`
+max_mem <- (0.9/n_cores)
 
 # Modelling
 # Algorithms to be used
@@ -71,7 +73,7 @@ algo_opts <- NULL
 # Should areas be masked by the species depth?
 limit_by_depth <- TRUE
 # A buffer to be applied to the depth limitation
-depth_buffer <- 100
+depth_buffer <- 50
 # Assess spatial bias?
 assess_bias <- TRUE
 # Quadrature size
@@ -145,6 +147,7 @@ pmod <- function(species,
                  depth_buffer,
                  assess_bias,
                  quad_samp,
+                 max_mem,
                  p) {
   
   p()
@@ -182,6 +185,7 @@ pmod <- function(species,
       tg_metric = tg_metric,
       tg_threshold = tg_threshold,
       quad_samp = quad_samp,
+      max_mem = max_mem,
       verbose = FALSE
     ), silent = T)
     
@@ -214,6 +218,7 @@ if (run_parallel) {
                           depth_buffer = depth_buffer,
                           assess_bias = assess_bias,
                           quad_samp = quad_samp,
+                          max_mem = max_mem,
                           p = p, .options = furrr_options(seed = T))
   })
 } else {
@@ -229,6 +234,7 @@ if (run_parallel) {
                           depth_buffer = depth_buffer,
                           assess_bias = assess_bias,
                           quad_samp = quad_samp,
+                          max_mem = max_mem,
                           p = p)
   })
 }

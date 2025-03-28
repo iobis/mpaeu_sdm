@@ -81,7 +81,10 @@ model_species_esm <- function(species,
                           tg_threshold = 0.3,
                           quad_samp = 50000,
                           cleanup = TRUE,
+                          max_mem = 0.6,
                           verbose = FALSE) {
+
+  terra::terraOptions(memfrac = max_mem)
   
   # Check verbosity
   verb_1 <- verb_2 <- FALSE
@@ -144,22 +147,8 @@ model_species_esm <- function(species,
     species_name <- species_data$species[1]
     model_log$scientificName <- species_name
     
-    # Load ecological information
-    eco_info <- arrow::open_csv_dataset("data/species_ecoinfo.csv") %>%
-      filter(taxonID == species) %>%
-      collect()
-    
-    if (nrow(eco_info) < 1) {
-      eco_info <- obissdm::mp_get_ecoinfo(
-        species_list = species,
-        outfile = NULL,
-        return_table = TRUE,
-        show_progress = FALSE
-      )
-    }
-    
-    # Select ecological information for the species
-    hab <- eco_info$mode_life
+    # Load and select ecological information for the species
+    hab <- .cm_check_habitat(species)
     hab_depth <- hab_to_depth(hab)
     model_log$hab_depth <- hab_depth
     
