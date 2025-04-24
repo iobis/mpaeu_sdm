@@ -369,8 +369,8 @@ model_species <- function(species,
                          outacro, good_models)
         
         # Update log with best parameters
-        for (al in 1:length(algorithms)) {
-          if (!is.null(model_fits[[al]])) {
+        for (al in seq_along(algorithms)) {
+          if (!is.logical(model_fits[[al]])) {
             model_log$model_bestparams[[al]] <- model_fits[[al]]$parameters
           }
         }
