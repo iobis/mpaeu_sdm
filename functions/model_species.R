@@ -345,7 +345,10 @@ model_species <- function(species,
 
         # PART 11: EVALUATE MODELS USING OTHER TECHNIQUES ----
         if (verb_1) cli::cli_alert_info("Performing post-evaluation")
-        sp_data_post <- .cm_check_posteval_n(sp_data)
+        post_ob <- .cm_check_posteval_n(sp_data, model_log)
+        model_log <- post_ob$logs
+        sp_data_post <- post_ob$dat
+        rm(post_ob)
 
 
         model_log <- .cm_posteval_all(

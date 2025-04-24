@@ -875,8 +875,9 @@
 }
 
 
+# Post evaluation ----
 # Check post-eval number
-.cm_check_posteval_n <- function(sp_data) {
+.cm_check_posteval_n <- function(sp_data, model_log) {
   if (sum(sp_data$training$presence) > 5000) {
     sp_data_post <- sp_data
     which_pres <- which(sp_data$training$presence == 1)
@@ -891,11 +892,13 @@
   } else {
     sp_data_post <- sp_data
   }
-  return(sp_data_post)
+  return(list(
+    dat = sp_data_post,
+    logs = model_log
+  ))
 }
 
-
-# Post evaluation ----
+# Post evaluation temperature
 .cm_posteval_sst <- function(model_predictions, sdm_data,
                              thresholds, algorithms, hab_depth,
                              good_models, model_log) {
