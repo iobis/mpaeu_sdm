@@ -109,7 +109,7 @@
   
   # Check which eco-regions are covered by the points
   ecoreg_unique <- ecoregions$Realm[is.related(ecoregions,
-                                               vect(bind_rows(fit_pts, eval_pts), 
+                                               terra::vect(bind_rows(fit_pts, eval_pts), 
                                                     geom = coord_names), 
                                                "intersects")]
   
@@ -119,7 +119,7 @@
   # Apply a buffer to ensure that all areas are covered
   sf::sf_use_s2(FALSE)
   ecoreg_occ_buff <- suppressMessages(
-    suppressWarnings(vect(sf::st_buffer(sf::st_as_sf(vect(bind_rows(fit_pts, eval_pts),
+    suppressWarnings(terra::vect(sf::st_buffer(sf::st_as_sf(vect(bind_rows(fit_pts, eval_pts),
                                                           geom = coord_names)), 0.2)))
   )
 
@@ -136,11 +136,10 @@
 
   # Load bathymetry layer
   bath <- terra::rast("data/env/terrain/bathymetry_mean.tif")
-  bath <- terra::mask(terra::crop(bath, ecoreg_sel), ecoreg_sel)
+  bath <- terra::mask(bath, ecoreg_sel)
   
   bath_pts <- terra::extract(bath, bind_rows(fit_pts, eval_pts))
   
-  # Limit by depth if TRUE
   # Limit by depth if TRUE
   if (limit_by_depth) {
     if (verb_1) cli::cli_alert_info("Limiting by depth")
@@ -153,12 +152,12 @@
     bath[bath < bath_range[1] | bath > bath_range[2]] <- NA
     
     if ("coastal" %in% names(env$hypothesis)) {
-      europe_starea <- terra::vect("data/shapefiles/mpa_europe_starea_v2.shp")
-      bath <- terra::crop(bath, europe_starea)
-      env$layers <- terra::mask(terra::crop(env$layers, ecoreg_sel), bath)
+      #europe_starea <- terra::vect("data/shapefiles/mpa_europe_starea_v2.shp")
+      #bath <- terra::crop(bath, europe_starea)
+      env$layers <- terra::mask(env$layers, bath)
       env$layers <- terra::mask(env$layers, env$layers$wavefetch)
     } else {
-      env$layers <- terra::mask(terra::crop(env$layers, ecoreg_sel), bath)
+      env$layers <- terra::mask(env$layers, bath)
     }
     
     model_log$model_details$limited_by_depth <- TRUE
@@ -166,9 +165,10 @@
     
   } else {
     if ("coastal" %in% names(env$hypothesis)) {
-      europe_starea <- terra::vect("data/shapefiles/mpa_europe_starea_v2.shp")
-      ecoreg_sel <- terra::crop(ecoreg_sel, europe_starea)
+     # europe_starea <- terra::vect("data/shapefiles/mpa_europe_starea_v2.shp")
+      #ecoreg_sel <- terra::crop(ecoreg_sel, europe_starea)
       env$layers <- terra::mask(env$layers, ecoreg_sel)
+      env$layers <- terra::mask(env$layers, env$layers$wavefetch)
     } else {
       env$layers <- terra::mask(env$layers, ecoreg_sel)
     }
@@ -418,7 +418,7 @@
       env_to_pred <- terra::subset(env_to_pred, colnames(sp_data$training)[-1])
 
       if (best_hyp == "coastal") {
-        env_to_pred <- terra::mask(terra::crop(env_to_pred, env$layers[[1]]), env$layers[[1]])
+        env_to_pred <- terra::mask(env_to_pred, env$layers[[1]])
       }
 
       pred <- predict(model_fits[[id]], env_to_pred)
