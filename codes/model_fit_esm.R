@@ -68,6 +68,7 @@ max_mem <- (0.9/n_cores)
 # Modelling
 # Algorithms to be used
 algos <- "esm"
+algo_opts <- NULL
 # Should areas be masked by the species depth?
 limit_by_depth <- TRUE
 # A buffer to be applied to the depth limitation
