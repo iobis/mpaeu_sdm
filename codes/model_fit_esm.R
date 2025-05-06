@@ -68,10 +68,6 @@ max_mem <- (0.9/n_cores)
 # Modelling
 # Algorithms to be used
 algos <- "esm"
-# Personalized options
-algo_opts <- obissdm::sdm_options(algos)
-algo_opts$features <- c("lq", "h")
-algo_opts$remult <- seq_len(4)
 # Should areas be masked by the species depth?
 limit_by_depth <- TRUE
 # A buffer to be applied to the depth limitation
