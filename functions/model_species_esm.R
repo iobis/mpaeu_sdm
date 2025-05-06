@@ -661,6 +661,7 @@ model_species_esm <- function(species,
         
         # PART 10: CREATE MASKS AND SAVE ----
         if (verb_1) cli::cli_alert_info("Saving masks")
+        best_hyp <- names(env$hypothesis)
         .cm_save_masks(
           ecoreg_occ, ecoreg_sel, multi_mod = list(best_model = best_hyp),
           env, model_predictions, sp_data,

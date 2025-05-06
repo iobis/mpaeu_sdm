@@ -990,7 +990,7 @@
     n_vars <- 2
   }
   
-  vars <- vars$variable[seq_along(n_vars)]
+  vars <- vars$variable[seq_len(n_vars)]
   
   # Subset environmental layers
   climate <- terra::subset(env_layers, vars)
