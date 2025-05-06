@@ -258,7 +258,7 @@ model_species_esm <- function(species,
     # PART 5: FIT MODELS ----
     if (verb_1) cli::cli_alert_info("Starting model fitting")
     if (!is.null(algo_opts)) {
-      if (any(!names(algo_opts) %in% names(obissdm::sdm_options("esm")))) {
+      if (any(!names(algo_opts) %in% c("esm"))) {
         cli::cli_alert_info("Invalid `algo_opts`; using default.")
         algo_opts <- obissdm::sdm_options("esm")
       }
