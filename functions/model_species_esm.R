@@ -441,11 +441,11 @@ model_species_esm <- function(species,
           if (do_mess) {
             pred_mess <- as.int(pred_mess)
             writeRaster(pred_mess, outmess, overwrite = T, datatype = "INT1U")
-            #cogeo_optim(outmess)
+            cogeo_optim(outmess)
           }
           if (do_shape) {
             writeRaster(pred_shape, outshape, overwrite = T, datatype = "INT2U")
-            #cogeo_optim(outshape)
+            cogeo_optim(outshape)
           }
           
           return(pred_f)
@@ -681,7 +681,7 @@ model_species_esm <- function(species,
           thresh_p10_mtp, algorithms, hab_depth,
           good_models, model_log, metric_out,
           species, outacro,
-          model_varimport, env, verb_1
+          list(model_varimport), env, verb_1
         )
         treg <- obissdm::.get_time(treg, "Post-evaluation")
         
