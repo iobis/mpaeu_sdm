@@ -290,7 +290,7 @@ bootstrap_sp <- function(species, target = "all",
             
             cv_rast <- terra::mask(cv_rast, base_layer)
 
-            cv_rast <- cv_rast * 100
+            #cv_rast <- cv_rast * 100
             cv_rast <- terra::as.int(cv_rast)
 
             outf <- basename(m_pred_sc[1])
@@ -339,7 +339,7 @@ bootstrap_sp <- function(species, target = "all",
             
             cv_rast <- terra::mask(cv_rast, base_layer)
 
-            cv_rast <- cv_rast * 100
+            #cv_rast <- cv_rast * 100
             cv_rast <- terra::as.int(cv_rast)
 
             outf <- glue::glue("taxonid={species}_model={acro}_method=ensemble_scen={sc}")
