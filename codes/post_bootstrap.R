@@ -26,22 +26,24 @@ start_time <- Sys.time()
 
 # Model acronym
 acro <- "mpaeu"
-results_folder <- "results"
+results_folder <- "/data/scps/v4/results"
 
 # Set species to run
 # To run specific species, uncomment below and comment the others
-sel_species <- c(124287)
+# sel_species <- c(107381)
 # Otherwise, use species that were effectively modeled
-# st_sdm <- storr_rds(paste0(acro, "_storr"))
-# st_sdm_done <- st_sdm$list()
-# st_sdm_status <- st_sdm$mget(st_sdm_done)
-# st_sdm_done <- st_sdm_done[unlist(lapply(st_sdm_status, function(x) x[[1]])) == "succeeded"]
-# sel_species <- as.numeric(st_sdm_done)
+st_sdm <- storr_rds(paste0(acro, "_storr"))
+st_sdm_done <- st_sdm$list()
+st_sdm_status <- st_sdm$mget(st_sdm_done)
+st_sdm_done <- st_sdm_done[unlist(lapply(st_sdm_status, function(x) x[[1]])) == "succeeded"]
+sel_species <- as.numeric(st_sdm_done)
 
 # Run in parallel? For avoiding parallel, change both to FALSE
 run_parallel <- ifelse(length(sel_species) > 1 | sel_species == "all", TRUE, FALSE)[1]
 # Number of cores for parallel processing
-n_cores <- 4
+n_cores <- 80
+# Maximum memory used by `terra` - only when in parallel
+max_mem <- (0.9/n_cores)
 # Bootstrap target ("all", "best" or a particular algorithm)
 boot_mode <- "all"
 
@@ -51,6 +53,23 @@ st <- storr_rds(paste0(acro, "_boot_storr"))
 if (!st$exists("startdate")) {
     st$set("startdate", format(Sys.Date(), "%Y%m%d"))
 }
+
+# Already remove those that were done previously, to better distribute workload
+done_boot_codes <- st$list()
+done_boot_codes <- done_boot_codes[done_boot_codes != "startdate"]
+sel_species <- sel_species[!sel_species %in% done_boot_codes]
+
+# Optional: order by size to equalize workload
+fit_size <- sapply(sel_species, \(id) {
+    pth <- file.path(results_folder, paste0("taxonid=", id,
+                                            "/model=", acro, "/taxonid=",
+                                            id, "_model=", acro,
+                                            "_what=log.json"))
+    logf <- jsonlite::read_json(pth)
+    unlist(logf$model_fit_points, use.names = F)
+})
+sel_species <- sel_species[order(fit_size)]
+
 
 # Output for control
 cli::cat_rule()
@@ -70,7 +89,15 @@ cli::cat_rule()
 
 pmod <- function(species,
                  boot_mode,
+                 results_folder,
+                 acro,
+                 max_mem = NULL,
                  p) {
+
+    if (!is.null(max_mem)) {
+        terra::terraOptions(memfrac = max_mem)
+    }
+
     p()
 
     if (st$exists(species)) {
@@ -87,7 +114,7 @@ pmod <- function(species,
         st$set(species, "running")
 
         fit_result <- try(
-            bootstrap_sp(species = species, target = boot_mode),
+            bootstrap_sp(species = species, target = boot_mode, results_folder = results_folder),
             silent = T
         )
 
@@ -116,6 +143,8 @@ if (run_parallel) {
         p <- progressor(steps = length(sel_species))
         result <- future_map(sel_species, pmod,
             boot_mode = boot_mode,
+            results_folder = results_folder,
+            acro = acro, max_mem = max_mem,
             p = p, .options = furrr_options(seed = T)
         )
     })
@@ -124,6 +153,8 @@ if (run_parallel) {
         p <- progressor(steps = length(sel_species))
         result <- purrr::map(sel_species, pmod,
             boot_mode = boot_mode,
+            results_folder = results_folder,
+            acro = acro, max_mem = NULL,
             p = p
         )
     })
