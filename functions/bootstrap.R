@@ -6,15 +6,16 @@
 #
 ############################ SDM - bootstrap functions #########################
 
+source("functions/components_model_species.R")
+
 bootstrap_model <- function(species, iterations = 20,
                             model_acro = "mpaeu",
                             results_folder = "results",
                             target = "all",
-                            n_back_max = NULL, verbose = FALSE) {
+                            n_back_max = NULL, verbose = FALSE, retry_max = 10) {
     temp_outf <- glue::glue("{results_folder}/taxonid={species}/model={model_acro}/predictions/temp_pred/")
     fs::dir_create(temp_outf)
 
-    source("functions/components_model_species.R")
     log_file <- jsonlite::read_json(glue::glue("{results_folder}/taxonid={species}/model={model_acro}/taxonid={species}_model={model_acro}_what=log.json"))
 
     best_conf <- log_file[["model_bestparams"]]
@@ -25,6 +26,9 @@ bootstrap_model <- function(species, iterations = 20,
 
     if (target == "all") {
         to_do <- good_models
+        if (is.numeric(to_do)) {
+          to_do <- "esm"
+        }
     } else if (target == "best") {
         metrics <- lapply(good_models, function(mn) {
             mfiles <- list.files(glue::glue("{results_folder}/taxonid={species}/model={model_acro}/metrics/"), full.names = T)
@@ -65,7 +69,7 @@ bootstrap_model <- function(species, iterations = 20,
     }
 
     # Load env layers
-    env <- obissdm::get_envofgroup(group,
+    env <- obissdm::get_envofgroup(unlist(group),
         depth = hab_depth, load_all = T,
         conf_file = "sdm_conf.yml", verbose = verbose
     )
@@ -80,14 +84,14 @@ bootstrap_model <- function(species, iterations = 20,
     # Load points
     pts <- arrow::read_parquet(glue::glue("{results_folder}/taxonid={species}/model={model_acro}/taxonid={species}_model={model_acro}_what=fitocc.parquet"))
 
-    quad_n <- log_file[["model_details"]][["background_size"]][[1]]
+    quad_n <- unlist(log_file[["model_details"]][["background_size"]][[1]])
 
     if (!is.null(n_back_max)) {
         quad_n <- ifelse(quad_n > n_back_max, n_back_max, quad_n)
     }
 
     env_xy <- terra::as.data.frame(prod(env_masked), xy = T)[, 1:2]
-    env_xy_samp <- sample(1:nrow(env_xy), size = quad_n)
+    env_xy_samp <- sample(seq_len(nrow(env_xy)), size = quad_n)
     env_xy <- env_xy[env_xy_samp, ]
     colnames(env_xy) <- c("decimalLongitude", "decimalLatitude")
 
@@ -99,8 +103,8 @@ bootstrap_model <- function(species, iterations = 20,
 
     for (i in 1:iterations) {
         if (verbose) cli::cat_line(cli::bg_cyan(glue::glue("Running iteration {i} out of {iterations}")))
-        samp_pts <- sample(1:nrow(pts), nrow(pts), replace = T)
-        samp_quad <- sample(1:nrow(sampled_quad), nrow(sampled_quad), replace = T)
+        samp_pts <- sample(seq_len(nrow(pts)), nrow(pts), replace = T)
+        samp_quad <- sample(seq_len(nrow(sampled_quad)), nrow(sampled_quad), replace = T)
 
         sp_data <- obissdm::mp_prepare_data(pts[samp_pts, ],
             eval_data = NULL,
@@ -110,14 +114,49 @@ bootstrap_model <- function(species, iterations = 20,
             verbose = verbose
         )
 
-        for (z in 1:length(to_do)) {
+        for (z in seq_len(length(to_do))) {
             if (to_do[z] == "maxent") {
                 bp <- best_conf[["maxent"]][[1]]
+            } else if (to_do[z] == "esm") {
+                bp <- best_conf[[to_do[z]]]
+                bp$individual_parameters <- as.data.frame(dplyr::bind_rows(bp$individual_parameters))
+                # Deal with exception, when the resulting object contain lists
+                if (class(bp$individual_parameters[,1]) == "list") {
+                  new_df <- data.frame(
+                    remult = unlist(bp$individual_parameters$remult),
+                    features = unlist(bp$individual_parameters$features),
+                    part = unlist(bp$individual_parameters$part)
+                  )
+                  bp$individual_parameters <- new_df
+                }
+                bp$variable_combinations <- lapply(bp$variable_combinations, function(x){
+                  unlist(x)
+                })
+                bp$scores <- unlist(bp$scores)
             } else {
                 bp <- best_conf[[to_do[z]]]
             }
 
-            fit <- obissdm::model_bootstrap(sp_data, algo = to_do[z], params = bp, verbose = verbose)
+            fit <- try(obissdm::model_bootstrap(sp_data, algo = to_do[z], params = bp, verbose = verbose), silent = T)
+            
+            if (inherits(fit, "try-error") && !is.null(retry_max)) {
+              initc <- 0
+              while (initc <= retry_max & inherits(fit, "try-error")) {
+                samp_pts <- sample(seq_len(nrow(pts)), nrow(pts), replace = T)
+                samp_quad <- sample(seq_len(nrow(sampled_quad)), nrow(sampled_quad), replace = T)
+                
+                sp_data <- obissdm::mp_prepare_data(pts[samp_pts, ],
+                                                    eval_data = NULL,
+                                                    species_id = unlist(log_file[["scientificName"]]),
+                                                    env_layers = env_masked,
+                                                    pred_quad = sampled_quad[samp_quad, ],
+                                                    verbose = verbose
+                )
+                fit <- try(obissdm::model_bootstrap(sp_data, algo = to_do[z], params = bp, verbose = verbose), silent = T)
+                initc <- initc + 1
+              }
+              if (inherits(fit, "try-error")) stop("Error when trying refit of ", to_do[z])
+            }
 
             pred <- predict_bootstrap(fit, sp_data, species,
                                       group = group, hab_depth = hab_depth,
@@ -149,7 +188,7 @@ predict_bootstrap <- function(fit, sdm_data, species, group, hab_depth,
         model_name <- fit$name
     }
 
-    for (k in 1:nrow(scenarios)) {
+    for (k in seq_len(nrow(scenarios))) {
         if (is.na(scenarios$year[k])) {
             period <- NULL
         } else {
@@ -163,8 +202,8 @@ predict_bootstrap <- function(fit, sdm_data, species, group, hab_depth,
             ifelse(is.null(period), "", paste0("_", period)), "_it=", iteration, ".tif"
         )
 
-        env_to_pred <- obissdm::get_envofgroup(group,
-            depth = hab_depth, load_all = T,
+        env_to_pred <- obissdm::get_envofgroup(unlist(group),
+            depth = unlist(hab_depth), load_all = T,
             scenario = scenarios$scenario[k],
             period = period,
             env_folder = "data/env",
@@ -182,7 +221,7 @@ predict_bootstrap <- function(fit, sdm_data, species, group, hab_depth,
             pred_multi <- lapply(fit, function(x) {
                 predict(x, env_to_pred)
             })
-            pred_multi <- rast(pred_multi)
+            pred_multi <- terra::rast(pred_multi)
             scores_ens <- attr(fit, "scores")
             pred <- weighted.mean(pred_multi, scores_ens, na.rm = T)
         }
@@ -212,7 +251,7 @@ bootstrap_sp <- function(species, target = "all",
 
     if (inherits(bt_result, "try-error")) return(list("failed", bt_result))
 
-    all_preds <- list.files(glue::glue("results/taxonid={species}/model={acro}/predictions/temp_pred/"),
+    all_preds <- list.files(glue::glue("{results_folder}/taxonid={species}/model={acro}/predictions/temp_pred/"),
         full.names = T
     )
 
@@ -225,25 +264,30 @@ bootstrap_sp <- function(species, target = "all",
         scenarios <- unique(scenarios)
 
         for (sc in scenarios) {
-            f_preds <- list.files(glue::glue("results/taxonid={species}/model={acro}/predictions"),
+            f_preds <- list.files(glue::glue("{results_folder}/taxonid={species}/model={acro}/predictions"),
                 full.names = T
             )
             f_preds <- f_preds[grepl(paste0("method=", un, "_scen=", sc), f_preds)]
             f_preds <- f_preds[!grepl("bootcv", f_preds)]
 
-            base_layer <- rast(f_preds)
+            base_layer <- terra::rast(f_preds)
 
             m_pred_sc <- m_pred[grepl(sc, m_pred)]
 
-            pred_rast <- rast(m_pred_sc)
+            pred_rast <- terra::rast(m_pred_sc)
 
-            cv_rast <- (app(pred_rast, "sd") / mean(pred_rast))
+            #cv_rast <- (terra::app(pred_rast, "sd") / mean(pred_rast))
+            sd_rast <- terra::app(pred_rast, "sd")
+            mean_rast <- mean(pred_rast)
+            cv_rast <- c(sd_rast, mean_rast)
 
-            # To handle cases in that 0/0 == NA
-            cv_rast[is.na(cv_rast)] <- 0
-            cv_rast <- terra::mask(cv_rast, pred_rast[[1]])
-
-            cv_rast <- disagg(cv_rast, fact = 4)
+            cv_rast <- terra::disagg(cv_rast, fact = 4)
+            
+            # To handle special case of older wavefetch (back compatibility)
+            if (terra::ext(cv_rast) != terra::ext(base_layer)) {
+              cv_rast <- terra::crop(cv_rast, base_layer)
+            }
+            
             cv_rast <- terra::mask(cv_rast, base_layer)
 
             cv_rast <- cv_rast * 100
@@ -251,52 +295,57 @@ bootstrap_sp <- function(species, target = "all",
 
             outf <- basename(m_pred_sc[1])
             outf <- gsub("_it=*.*", "", outf)
-            outf <- glue::glue("results/taxonid={species}/model={acro}/predictions/{outf}_what=bootcv.tif")
+            outf <- glue::glue("{results_folder}/taxonid={species}/model={acro}/predictions/{outf}_what=bootcv.tif")
 
-            writeRaster(cv_rast, outf, overwrite = T, datatype = "INT2U")
+            terra::writeRaster(cv_rast, outf, overwrite = T, datatype = "INT2U")
             cogeo_optim(outf)
         }
     }
 
     if (length(un_models) > 1) {
         for (sc in scenarios) {
-            f_preds <- list.files(glue::glue("results/taxonid={species}/model={acro}/predictions"),
+            f_preds <- list.files(glue::glue("{results_folder}/taxonid={species}/model={acro}/predictions"),
                 full.names = T
             )
             f_preds <- f_preds[grepl(paste0("_scen=", sc), f_preds)]
             f_preds <- f_preds[!grepl("bootcv", f_preds)]
             f_preds <- f_preds[grepl(paste0(un_models, collapse = "|"), f_preds)]
 
-            base_layer <- rast(f_preds)
+            base_layer <- terra::rast(f_preds)
             base_layer <- mean(base_layer)
 
             m_pred <- all_preds[grepl(paste0("_scen=", sc), all_preds)]
             m_pred <- m_pred[grepl(paste0(un_models, collapse = "|"), m_pred)]
 
-            pred_rast <- lapply(1:20, function(x) NULL)
+            pred_rast <- lapply(seq_len(iterations), function(x) NULL)
 
-            for (it in 1:20) {
-                pred_rast[[it]] <- mean(rast(m_pred[grepl(paste0("it=", it, ".tif"), m_pred)]))
+            for (it in seq_len(iterations)) {
+                pred_rast[[it]] <- mean(terra::rast(m_pred[grepl(paste0("it=", it, ".tif"), m_pred)]))
             }
 
-            pred_rast <- rast(pred_rast)
+            pred_rast <- terra::rast(pred_rast)
 
-            cv_rast <- (app(pred_rast, "sd") / mean(pred_rast))
+            #cv_rast <- (terra::app(pred_rast, "sd") / mean(pred_rast))
+            sd_rast <- terra::app(pred_rast, "sd")
+            mean_rast <- mean(pred_rast)
+            cv_rast <- c(sd_rast, mean_rast)
 
-            # To handle cases in that 0/0 == NA
-            cv_rast[is.na(cv_rast)] <- 0
-            cv_rast <- terra::mask(cv_rast, pred_rast[[1]])
-
-            cv_rast <- disagg(cv_rast, fact = 4)
+            cv_rast <- terra::disagg(cv_rast, fact = 4)
+            
+            # To handle special case of older wavefetch (back compatibility)
+            if (terra::ext(cv_rast) != terra::ext(base_layer)) {
+              cv_rast <- terra::crop(cv_rast, base_layer)
+            }
+            
             cv_rast <- terra::mask(cv_rast, base_layer)
 
             cv_rast <- cv_rast * 100
             cv_rast <- terra::as.int(cv_rast)
 
             outf <- glue::glue("taxonid={species}_model={acro}_method=ensemble_scen={sc}")
-            outf <- glue::glue("results/taxonid={species}/model={acro}/predictions/{outf}_what=bootcv.tif")
+            outf <- glue::glue("{results_folder}/taxonid={species}/model={acro}/predictions/{outf}_what=bootcv.tif")
 
-            writeRaster(cv_rast, outf, overwrite = T, datatype = "INT2U")
+            terra::writeRaster(cv_rast, outf, overwrite = T, datatype = "INT2U")
             cogeo_optim(outf)
         }
     }
@@ -311,7 +360,7 @@ bootstrap_sp <- function(species, target = "all",
     log_file$model_uncertainty$bootstrap_max_n <- n_back_max
     jsonlite::write_json(log_file, path = jsonf, pretty = TRUE)
 
-    fs::dir_delete(glue::glue("results/taxonid={species}/model={acro}/predictions/temp_pred/"))
+    fs::dir_delete(glue::glue("{results_folder}/taxonid={species}/model={acro}/predictions/temp_pred/"))
 
     return("done")
 }
