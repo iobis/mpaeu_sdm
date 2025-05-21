@@ -175,7 +175,7 @@
     }
   }
 
-  model_log$range_depth <- range(bath_pts)
+  model_log$range_depth <- range(bath_pts[,2])
   
   return(list(
     env = env,
