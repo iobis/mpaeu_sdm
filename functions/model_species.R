@@ -178,6 +178,7 @@ model_species <- function(species,
     bath_pts <- prep_eco$bath_pts
     ecoreg_occ <- prep_eco$ecoreg_occ
     ecoreg_sel <- prep_eco$ecoreg_sel
+    max_depth <- min(bath_pts)
     rm(prep_eco)
     
     # Check if species is from shallow/coastal areas and remove distcoast/bathymetry
@@ -337,7 +338,7 @@ model_species <- function(species,
         .cm_save_masks(
           ecoreg_occ, ecoreg_sel, multi_mod,
           env, model_predictions, sp_data,
-          pred_out, species, outacro, coord_names
+          pred_out, species, outacro, coord_names, max_depth
         )
         treg <- obissdm::.get_time(treg, "Masks")
 

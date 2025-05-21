@@ -139,6 +139,7 @@
   bath <- terra::mask(bath, ecoreg_sel)
   
   bath_pts <- terra::extract(bath, bind_rows(fit_pts, eval_pts))
+  bath_pts <- bath_pts[!is.na(bath_pts[,2]),]
   
   # Limit by depth if TRUE
   if (limit_by_depth) {
@@ -173,6 +174,8 @@
       env$layers <- terra::mask(env$layers, ecoreg_sel)
     }
   }
+
+  model_log$range_depth <- range(bath_pts)
   
   return(list(
     env = env,
@@ -185,7 +188,7 @@
 
 # Check shallow ----
 .cm_check_shallow <- function(bath_pts, env, verb_1) {
-  if (min(bath_pts[,2], na.rm = T) >= -100) {
+  if (min(bath_pts[,2], na.rm = T) >= -50) {
     if (verb_1) cli::cli_alert_info("Species from shallow areas - removing bathymetry/distance to coast")
     if (any(grepl("bathymetry", names(env$layers)))) {
       env$layers <- terra::subset(env$layers, "bathymetry_mean", negate = T)
@@ -813,9 +816,11 @@
 # Save masks ------
 .cm_save_masks <- function(ecoreg_occ, ecoreg_sel, multi_mod, 
                            env, model_predictions, sp_data,
-                           pred_out, species, outacro, coord_names) {
+                           pred_out, species, outacro, coord_names,
+                           max_depth) {
   # Get base raster
   base_layer <- rast("data/env/terrain/bathymetry_mean.tif")
+  bath_layer <- base_layer
   base_layer[!is.na(base_layer)] <- 1
 
   # Get mask for study area species occurrence
@@ -825,12 +830,14 @@
   ecoreg_mask <- terra::mask(base_layer, ecoreg_sel)
 
   # Get area used for fitting
-  if (multi_mod$best_model == "coastal") {
-    fit_mask <- terra::extend(env$layers[[1]], base_layer)
-  } else {
-    fit_mask <- terra::extend(env$layers[[1]], model_predictions[[1]])
-  }
+  fit_mask <- terra::extend(env$layers[[1]], model_predictions[[1]])
   fit_mask[!is.na(fit_mask)] <- 1
+
+  # Fitting area + max_depth
+  bath_layer <- terra::classify(bath_layer,
+                                matrix(c(-999999, max_depth, NA), ncol = 3),
+                                right = FALSE)
+  max_depth_mask <- terra::mask(fit_mask, bath_layer)
 
   # Convex hull mask
   conv_hull <- terra::convHull(terra::vect(sp_data$coord_training[sp_data$training$presence == 1, ],
@@ -852,13 +859,14 @@
   )
   buff_pts_mask <- terra::mask(base_layer, buff_pts)
 
-  masks <- c(ecoreg_occ_mask, ecoreg_mask, fit_mask, conv_hull_mask, minb_circle_mask, buff_pts_mask)
+  masks <- c(ecoreg_occ_mask, ecoreg_mask, fit_mask, max_depth_mask,
+             conv_hull_mask, minb_circle_mask, buff_pts_mask)
 
   base_layer[!is.na(base_layer)] <- 0
 
   masks <- terra::mask(base_layer, masks, updatevalue = 1, inverse = T)
   names(masks) <- c(
-    "native_ecoregions", "fit_ecoregions", "fit_region",
+    "native_ecoregions", "fit_ecoregions", "fit_region", "fit_region_max_depth",
     "convex_hull", "minbounding_circle", "buffer100m"
   )
 
