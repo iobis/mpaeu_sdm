@@ -36,32 +36,32 @@ groups:
 variables:
   seabirds:
     basevars:
-      - tas_min
+      - tas_mean
       - siconc_max
-      - thetao_min
-      #- bathymetry_mean
-      #- distcoast
+      - thetao_max
+      - bathymetry_mean
+      - distcoast
       - sws_max
     coastal:
-      - tas_min
+      - tas_mean
       - siconc_max
-      - thetao_min
-      #- bathymetry_mean
-      #- distcoast
+      - thetao_max
+      - bathymetry_mean
+      - distcoast
       - sws_max
       - wavefetch
   photosynthesizers:
     basevars:
-      - thetao_min
-      #- bathymetry_mean
+      - thetao_max
+      - bathymetry_mean
       #- distcoast
       - sws_max
       - so_min
       - no3_min
       - par_min
     coastal:
-      - thetao_min
-      #- bathymetry_mean
+      - thetao_max
+      - bathymetry_mean
       #- distcoast
       - sws_max
       - so_min
@@ -71,8 +71,8 @@ variables:
       #- slope
       - rugosity
     complexity:
-      - thetao_min
-      #- bathymetry_mean
+      - thetao_max
+      - bathymetry_mean
       #- distcoast
       - sws_max
       - so_min
@@ -83,40 +83,40 @@ variables:
   mammals:
     basevars:
       - siconc_max
-      - thetao_min
-      #- bathymetry_mean
+      - thetao_max
+      - bathymetry_mean
       #- distcoast
       - sws_max
       - so_min
     coastal:
       - siconc_max
-      - thetao_min
-      #- bathymetry_mean
+      - thetao_max
+      - bathymetry_mean
       #- distcoast
       - sws_max
       - so_min
       - wavefetch
     complexity:
       - siconc_max
-      - thetao_min
-      #- bathymetry_mean
+      - thetao_max
+      - bathymetry_mean
       #- distcoast
       - sws_max
       - so_min
       - rugosity
   others:
     basevars:
-      - thetao_min
+      - thetao_max
       - thetao_range
-      #- bathymetry_mean
+      - bathymetry_mean
       #- distcoast
       - sws_max
       - so_min
       - o2_min
     coastal:
-      - thetao_min
+      - thetao_max
       - thetao_range
-      #- bathymetry_mean
+      - bathymetry_mean
       #- distcoast
       - sws_max
       - so_min
@@ -125,9 +125,9 @@ variables:
       - rugosity
       #- slope
     complexity:
-      - thetao_min
+      - thetao_max
       - thetao_range
-      #- bathymetry_mean
+      - bathymetry_mean
       #- distcoast
       - sws_max
       - so_min
