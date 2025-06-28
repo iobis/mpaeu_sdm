@@ -55,7 +55,7 @@
 
 
 # Check coastal ----
-.cm_check_coastal <- function(species_data, env, coord_names, verbose) {
+.cm_check_coastal <- function(species_data, env, coord_names, verbose, filter_mode = "normal") {
   
   if ("coastal" %in% names(env$hypothesis)) {
     # # Test if is within europe/coastal
@@ -88,14 +88,22 @@
     wave <- terra::rast("data/env/terrain/wavefetch.tif")
     wave_pts <- terra::extract(wave, species_data[,coord_names])
     
-    if (sum(is.na(wave_pts[,2])) > ceiling(nrow(species_data) * .05)) {
-      env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
-      env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
-      if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded. Too many points out of area.")
-    } else if ((nrow(species_data) - sum(is.na(wave_pts[,2]))) < 15) {
-      env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
-      env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
-      if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded. Final points would be less than 15.")
+    if (filter_mode == "normal") {
+      if (sum(is.na(wave_pts[,2])) > ceiling(nrow(species_data) * .05)) {
+        env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
+        env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
+        if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded. Too many points out of area.")
+      } else if ((nrow(species_data) - sum(is.na(wave_pts[,2]))) < 15) {
+        env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
+        env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
+        if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded. Final points would be less than 15.")
+      }
+    } else {
+      if ((nrow(species_data) - sum(is.na(wave_pts[,2]))) < 10) {
+        env$hypothesis <- env$hypothesis[names(env$hypothesis) != "coastal"]
+        env$layers <- terra::subset(env$layers, "wavefetch", negate = T)
+        if (verbose) cli::cli_alert_warning("Coastal hypothesis found but discarded. Final points would be less than 10 for ESM.")
+      }
     }
   }
   

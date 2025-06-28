@@ -157,7 +157,7 @@ model_species_esm <- function(species,
     env <- get_envofgroup(group, depth = hab_depth, load_all = T,
                           conf_file = "sdm_conf.yml", verbose = verb_2)
     
-    env <- .cm_check_coastal(species_data, env, coord_names, verb_2)
+    env <- .cm_check_coastal(species_data, env, coord_names, verb_2, filter_mode = "esm")
     
     # Restrict variables
     env$layers <- terra::subset(env$layers, env$hypothesis[[1]])
