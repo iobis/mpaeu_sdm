@@ -122,3 +122,7 @@ OBIS (25 June 2024) OBIS Occurrence Snapshot. Ocean Biodiversity Information Sys
 
 World Register of Marine Species. Available from https://www.marinespecies.org at VLIZ. Accessed 2024-05-01. doi:10.14284/170.
 ```
+
+## Updates
+
+You can check updates on the project [here](NEWS.md), including changes in the code that may be accounted for when replicating the results.

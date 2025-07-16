@@ -1,0 +1,3 @@
+## Updates
+
+- On 16 July 2025, the code for model fitting was updated to include one additional spatial block sampling in case the first sampling fail to balance the number of occurrences across the blocks (marginal cases, usually when number of occurrences is low). This is accompanied by a change in the block sampling function on the `obissdm` package. This modification **does not** affect the previous results, as the procedure is still completely random; any fitted model already had a good distribution across the blocks. If you want to replicate the previous behavior, add `legacy = TRUE` to the `obissdm::mp_prepare_blocks()` function on `functions/model_species[_esm].R`.
