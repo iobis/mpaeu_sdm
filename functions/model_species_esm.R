@@ -228,7 +228,20 @@ model_species_esm <- function(species,
                                  verbose = verb_2)
     
     if (any(table(sp_data$training$presence, sp_data$blocks$folds[["spatial_grid"]])[2,] == 0)) {
-      stop("Blocks with less than 1 point. Failed.")
+      
+      if (verb_2) cli::cli_alert_warning("Trying to get spatial blocks again with higher iteration value")
+
+      sp_data <- mp_prepare_blocks(sp_data,
+                                   method = "manual",
+                                   block_types = "spatial_grid",
+                                   n_iterate = 800,
+                                   retry_if_zero = TRUE,
+                                   manual_shp = block_grid,
+                                   verbose = verb_2)
+      
+      if (any(table(sp_data$training$presence, sp_data$blocks$folds[["spatial_grid"]])[2,] == 0)) {
+        stop("Blocks with less than 1 point. Failed.")
+      }
     }
     vals_blocks <- table(sp_data$training$presence,
                          sp_data$blocks$folds[[1]])
