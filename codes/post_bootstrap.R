@@ -26,7 +26,13 @@ start_time <- Sys.time()
 
 # Model acronym
 acro <- "mpaeu"
-results_folder <- "/data/scps/v4/results"
+results_folder <- "/data/scps/v5/results"
+# Change temporary folder for terra - only necessary if working with large number
+# of files and not enough space on the main drive
+# First do fs::dir_create("/data/scps/tmp_folder")
+# then write("TMP = /data/scps/tmp_folder", file=file.path('~/.Renviron'))
+# then restart R
+# check with tempdir()
 
 # Set species to run
 # To run specific species, uncomment below and comment the others
@@ -46,6 +52,8 @@ n_cores <- 80
 max_mem <- (0.9/n_cores)
 # Bootstrap target ("all", "best" or a particular algorithm)
 boot_mode <- "all"
+# Maximum number of retries in case model fail in bootstrap
+max_retry <- 20
 
 # Create storr to hold results
 st <- storr_rds(paste0(acro, "_boot_storr"))
@@ -114,7 +122,8 @@ pmod <- function(species,
         st$set(species, "running")
 
         fit_result <- try(
-            bootstrap_sp(species = species, target = boot_mode, results_folder = results_folder),
+            bootstrap_sp(species = species, target = boot_mode,
+                         results_folder = results_folder, retry_max = max_retry),
             silent = T
         )
 
