@@ -101,7 +101,7 @@ bootstrap_model <- function(species, iterations = 20,
         terra::extract(env_masked, env_xy, ID = F)
     )
 
-    for (i in 1:iterations) {
+    for (i in seq_len(iterations)) {
         if (verbose) cli::cat_line(cli::bg_cyan(glue::glue("Running iteration {i} out of {iterations}")))
         samp_pts <- sample(seq_len(nrow(pts)), nrow(pts), replace = T)
         samp_quad <- sample(seq_len(nrow(sampled_quad)), nrow(sampled_quad), replace = T)
