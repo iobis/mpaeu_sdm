@@ -238,7 +238,7 @@ predict_bootstrap <- function(fit, sdm_data, species, group, hab_depth,
 
 bootstrap_sp <- function(species, target = "all",
                          acro = "mpaeu", results_folder = "results",
-                         iterations = 20, n_back_max = 50000) {
+                         iterations = 20, n_back_max = 50000, retry_max = 10) {
 
     bt_result <- try(bootstrap_model(
         species,
@@ -246,7 +246,8 @@ bootstrap_sp <- function(species, target = "all",
         model_acro = acro,
         results_folder = results_folder,
         target = target,
-        n_back_max = n_back_max
+        n_back_max = n_back_max,
+        retry_max = retry_max
     ), silent = F)
 
     if (inherits(bt_result, "try-error")) return(list("failed", bt_result))
@@ -354,9 +355,11 @@ bootstrap_sp <- function(species, target = "all",
     log_file <- jsonlite::read_json(jsonf)
     log_file$model_uncertainty$bootstrap_status <- "done"
     log_file$model_uncertainty$bootstrap_iterations <- iterations
-    log_file$model_uncertainty$bootstrap_models <- ifelse(length(un_models) > 1,
-                                                          c(un_models, "ensemble"),
-                                                          un_models)
+    if (length(un_models) > 1) {
+        log_file$model_uncertainty$bootstrap_models <- c(un_models, "ensemble")
+    } else {
+        log_file$model_uncertainty$bootstrap_models <- un_models
+    }
     log_file$model_uncertainty$bootstrap_max_n <- n_back_max
     jsonlite::write_json(log_file, path = jsonf, pretty = TRUE)
 
@@ -365,4 +368,28 @@ bootstrap_sp <- function(species, target = "all",
     return("done")
 }
 
+# A problem was identified that, even if the bootstrap was done for all models
+# it would only save one of those in the log file. This does not affect any results
+# but we fixed the json files using the following function. Any new bootstrap realization
+# is already fixed by defaul.
+fix_boot_json <- function(species, results_folder, acro) {
+    preds <- list.files(glue::glue("{results_folder}/taxonid={species}/model={acro}/predictions"))
+    bootf <- preds[grepl("what=bootcv", preds)]
+    bootf <- gsub("_scen*.*", "", bootf)
+    bootf <- gsub("*.*_method=", "", bootf)
+    spd <- "not_changed"
+    if (length(unique(bootf)) > 1) {
+        counts <- table(bootf)
+        if (length(unique(counts)) == 1) {
+            # Needs correction
+            models_done <- unique(bootf)
+            jsonf <- glue::glue("{results_folder}/taxonid={species}/model={acro}/taxonid={species}_model={acro}_what=log.json")
+            log_file <- jsonlite::read_json(jsonf)
+            log_file$model_uncertainty$bootstrap_models <- models_done
+            jsonlite::write_json(log_file, path = jsonf, pretty = TRUE)
+            spd <- "changed"
+        }
+    }
+    return(spd)
+}
 # END

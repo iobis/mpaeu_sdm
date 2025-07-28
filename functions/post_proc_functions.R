@@ -25,7 +25,6 @@ limit_by_closest <- function(
         glue::glue("taxonid={species}/model={model_acro}/taxonid={species}_model={model_acro}_what=fitocc.parquet")
     ))
     fit_pts <- terra::vect(as.data.frame(fit_pts), geom = c("decimalLongitude", "decimalLatitude"), crs = "EPSG:4326")
-    max_dispersal <- 100000
     fit_pts_buffer <- terra::buffer(fit_pts, max_dispersal)
 
     # Load masks
