@@ -352,7 +352,7 @@ bootstrap_sp <- function(species, target = "all",
     }
 
     jsonf <- glue::glue("{results_folder}/taxonid={species}/model={acro}/taxonid={species}_model={acro}_what=log.json")
-    log_file <- jsonlite::read_json(jsonf)
+    log_file <- jsonlite::read_json(jsonf, simplifyVector = TRUE)
     log_file$model_uncertainty$bootstrap_status <- "done"
     log_file$model_uncertainty$bootstrap_iterations <- iterations
     if (length(un_models) > 1) {
@@ -384,7 +384,7 @@ fix_boot_json <- function(species, results_folder, acro) {
             # Needs correction
             models_done <- unique(bootf)
             jsonf <- glue::glue("{results_folder}/taxonid={species}/model={acro}/taxonid={species}_model={acro}_what=log.json")
-            log_file <- jsonlite::read_json(jsonf)
+            log_file <- jsonlite::read_json(jsonf, simplifyVector = TRUE)
             log_file$model_uncertainty$bootstrap_models <- models_done
             jsonlite::write_json(log_file, path = jsonf, pretty = TRUE)
             spd <- "changed"
