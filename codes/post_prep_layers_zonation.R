@@ -17,7 +17,7 @@ fs::dir_create(out_folder)
 results_folder <- "/data/scps/v5/results"
 parallel <- FALSE
 n_cores <- 80
-max_mem <- (0.9/n_cores)
+max_mem <- (0.9 / n_cores)
 
 # List available species
 species <- list.files(results_folder)
@@ -58,9 +58,11 @@ check_model <- function(results_folder, sp) {
 # Create a function to do the processing --------
 proc_layers <- function(sp, results_folder, out_folder, global_mask,
                         sel_threshold = "p10", type = "std",
-                        alpha = 0.5, model_acro = "mpaeu",
+                        alpha = 0.5, model_acro = "mpaeu", max_dispersal_const = 100000,
                         check_exists = TRUE, verbose = TRUE, max_mem = NULL) {
     if (verbose) message("Processing ", sp, " #", which(species == sp))
+
+    if (!type %in% c("std", "const")) stop("`type` should be one of 'std' or 'const'")
 
     best_m <- check_model(results_folder, sp)
 
@@ -79,7 +81,7 @@ proc_layers <- function(sp, results_folder, out_folder, global_mask,
     masks <- rast(glue(
         "{results_folder}/taxonid={sp}/model={model_acro}/predictions/taxonid={sp}_model={model_acro}_mask_cog.tif"
     ))
-    masks <- masks$fit_region
+    masks <- subset(masks, ifelse(type == "std", "fit_region", "fit_region_max_depth"))
     NAflag(masks) <- 0
 
     # Load threshold
@@ -114,6 +116,16 @@ proc_layers <- function(sp, results_folder, out_folder, global_mask,
         crop(global_mask) |>
         mask(global_mask)
 
+    if (type == "const") {
+        # Load points and apply buffer
+        fit_pts <- arrow::read_parquet(file.path(
+            results_folder,
+            glue::glue("taxonid={sp}/model={model_acro}/taxonid={sp}_model={model_acro}_what=fitocc.parquet")
+        ))
+        fit_pts <- terra::vect(as.data.frame(fit_pts), geom = c("decimalLongitude", "decimalLatitude"), crs = "EPSG:4326")
+        fit_pts_buffer <- terra::buffer(fit_pts, max_dispersal_const)
+    }
+
     for (lp in model_preds) {
         lyr_pred <- rast(lp)[[1]]
         lyr_boot <- rast(gsub("_cog.tif", "_what=bootcv_cog.tif", lp))[["sd"]]
@@ -130,8 +142,31 @@ proc_layers <- function(sp, results_folder, out_folder, global_mask,
             crop(global_mask) |>
             sum(base, na.rm = TRUE)
 
-        if (minmax(lyr_pred)["min",] < 0) {
+        if (minmax(lyr_pred)["min", ] < 0) {
             lyr_pred <- terra::classify(lyr_pred, matrix(data = c(-Inf, 0, 0), nrow = 1), right = FALSE)
+        }
+
+        if (type == "const") {
+            pred_masked <- terra::mask(lyr_pred, lyr_pred != 0, maskvalues = 0)
+
+            # Label patches and get polygon
+            pred_patches <- terra::patches(pred_masked, directions = 8)
+            patches_pols <- terra::as.polygons(pred_patches, dissolve = TRUE)
+
+            # Find intersections
+            touched_pt <- terra::intersect(patches_pols, fit_pts_buffer)
+            touched_pt_ids <- unique(terra::values(touched_pt)[[1]])
+
+            # Mask original
+            touched_pt_f <- terra::classify(pred_patches, rcl = cbind(setdiff(unique(terra::values(pred_patches)), touched_pt_ids), NA))
+            touched_pt_f <- terra::classify(touched_pt_f, matrix(c(-Inf, Inf, 1), ncol = 3))
+            lyr_pred <- pred_masked |>
+                mask(touched_pt_f) |>
+                sum(base, na.rm = TRUE)
+
+            if (minmax(lyr_pred)["min", ] < 0) {
+                lyr_pred <- terra::classify(lyr_pred, matrix(data = c(-Inf, 0, 0), nrow = 1), right = FALSE)
+            }
         }
 
         basef <- basename(lp)
@@ -148,25 +183,39 @@ proc_layers <- function(sp, results_folder, out_folder, global_mask,
 }
 
 # Apply processing -----
+post_grid <- expand.grid(
+    sel_threshold = c("p10", "mss"),
+    type = c("std", "const")
+)
+
 if (parallel) {
     require("furrr")
     plan(multisession, workers = n_cores)
 
-    proc_result <- future_map(species, proc_layers,
-        results_folder, out_folder, global_mask,
-        sel_threshold = "p10", type = "std",
-        alpha = 0.5, model_acro = "mpaeu",
-        check_exists = TRUE, verbose = FALSE,
-        max_mem = max_mem, .progress = TRUE
-    )
-
+    for (g in seq_len(nrow(post_grid))) {
+        message("Processing ", post_grid$sel_threshold[g], " | ", post_grid$type[g], " (", g, ")\n")
+        proc_result <- future_map(species, proc_layers,
+            results_folder, out_folder, global_mask,
+            sel_threshold = post_grid$sel_threshold[g],
+            type = post_grid$type[g],
+            alpha = 0.5, model_acro = "mpaeu",
+            check_exists = TRUE, verbose = FALSE,
+            max_mem = max_mem, .progress = TRUE
+        )
+        gc()
+    }
 } else {
-    proc_result <- lapply(species, proc_layers,
-        results_folder, out_folder, global_mask,
-        sel_threshold = "p10", type = "std",
-        alpha = 0.5, model_acro = "mpaeu",
-        check_exists = TRUE, verbose = TRUE
-    )
+    for (g in seq_len(nrow(post_grid))) {
+        message("Processing ", post_grid$sel_threshold[g], " | ", post_grid$type[g], " (", g, ")\n")
+        proc_result <- lapply(species, proc_layers,
+            results_folder, out_folder, global_mask,
+            sel_threshold = post_grid$sel_threshold[g],
+            type = post_grid$type[g],
+            alpha = 0.5, model_acro = "mpaeu",
+            check_exists = TRUE, verbose = TRUE
+        )
+        gc()
+    }
 }
 
 
