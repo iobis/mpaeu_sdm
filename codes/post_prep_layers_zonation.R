@@ -18,6 +18,7 @@ results_folder <- "/data/scps/v5/results"
 parallel <- FALSE
 n_cores <- 80
 max_mem <- (0.9 / n_cores)
+global_mask <- "data/shapefiles/mpa_europe_starea_v3.gpkg"
 
 # List available species
 species <- list.files(results_folder)
@@ -60,20 +61,13 @@ proc_layers <- function(sp, results_folder, out_folder, global_mask,
                         sel_threshold = "p10", type = "std",
                         alpha = 0.5, model_acro = "mpaeu", max_dispersal_const = 100000,
                         check_exists = TRUE, verbose = TRUE, max_mem = NULL) {
+
+    if (!is.null(max_mem)) terra::terraOptions(memfrac = max_mem)
     if (verbose) message("Processing ", sp, " #", which(species == sp))
 
     if (!type %in% c("std", "const")) stop("`type` should be one of 'std' or 'const'")
 
     best_m <- check_model(results_folder, sp)
-
-    if (check_exists) {
-        if (file.exists(file.path(
-            out_folder,
-            glue("taxonid={sp}_model={model_acro}_method={best_m}_scen=current_th={sel_threshold}_type={type}.tif")
-        ))) {
-            return(paste0(sp, "_done"))
-        }
-    }
 
     global_mask <- vect(global_mask)
 
@@ -126,7 +120,20 @@ proc_layers <- function(sp, results_folder, out_folder, global_mask,
         fit_pts_buffer <- terra::buffer(fit_pts, max_dispersal_const)
     }
 
+    if (verbose) {
+        pb <- progress::progress_bar$new(total = length(model_preds))
+    }
+
     for (lp in model_preds) {
+
+        if (verbose) pb$tick()
+
+        basef <- basename(lp)
+        basef <- gsub("_cog.tif", glue("_th={sel_threshold}_type={type}.tif"), basef)
+        if (check_exists) {
+            if (file.exists(file.path(out_folder, basef))) next
+        }
+
         lyr_pred <- rast(lp)[[1]]
         lyr_boot <- rast(gsub("_cog.tif", "_what=bootcv_cog.tif", lp))[["sd"]]
 
@@ -142,7 +149,9 @@ proc_layers <- function(sp, results_folder, out_folder, global_mask,
             crop(global_mask) |>
             sum(base, na.rm = TRUE)
 
-        if (minmax(lyr_pred)["min", ] < 0) {
+        if (all(is.na(minmax(lyr_pred)))) {
+            return(paste0(sp, "_empty-on-starea"))
+        } else if (minmax(lyr_pred)["min", ] < 0) {
             lyr_pred <- terra::classify(lyr_pred, matrix(data = c(-Inf, 0, 0), nrow = 1), right = FALSE)
         }
 
@@ -169,8 +178,6 @@ proc_layers <- function(sp, results_folder, out_folder, global_mask,
             }
         }
 
-        basef <- basename(lp)
-        basef <- gsub("_cog.tif", glue("_th={sel_threshold}_type={type}.tif"), basef)
         writeRaster(
             lyr_pred,
             file.path(out_folder, basef),
