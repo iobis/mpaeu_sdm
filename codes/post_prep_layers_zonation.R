@@ -19,6 +19,7 @@ parallel <- FALSE
 n_cores <- 80
 max_mem <- (0.9 / n_cores)
 global_mask <- "data/shapefiles/mpa_europe_starea_v3.gpkg"
+base_file <- "data/env/current/thetao_baseline_depthsurf_mean.tif"
 
 # List available species
 species <- list.files(results_folder)
@@ -57,13 +58,13 @@ check_model <- function(results_folder, sp) {
 }
 
 # Create a function to do the processing --------
-proc_layers <- function(sp, results_folder, out_folder, global_mask,
+proc_layers <- function(sp, results_folder, out_folder, global_mask, base_file = "same",
                         sel_threshold = "p10", type = "std",
                         alpha = 0.5, model_acro = "mpaeu", max_dispersal_const = 100000,
                         check_exists = TRUE, verbose = TRUE, max_mem = NULL) {
 
     if (!is.null(max_mem)) terra::terraOptions(memfrac = max_mem)
-    if (verbose) message("Processing ", sp, " #", which(species == sp))
+    if (verbose) message("Processing ", sp)
 
     if (!type %in% c("std", "const")) stop("`type` should be one of 'std' or 'const'")
 
@@ -104,8 +105,15 @@ proc_layers <- function(sp, results_folder, out_folder, global_mask,
         return(paste0(sp, "_no-boot-files"))
     }
 
-    base <- model_preds[1] |>
-        rast() |>
+    if (base_file == "same") {
+        base <- model_preds[1] |>
+            rast()
+    } else {
+        base <- base_file |>
+            rast()
+    }
+
+    base <- base |>
         terra::classify(matrix(data = c(-Inf, Inf, 0), nrow = 1), right = FALSE) |>
         crop(global_mask) |>
         mask(global_mask)
@@ -153,6 +161,9 @@ proc_layers <- function(sp, results_folder, out_folder, global_mask,
             return(paste0(sp, "_empty-on-starea"))
         } else if (minmax(lyr_pred)["min", ] < 0) {
             lyr_pred <- terra::classify(lyr_pred, matrix(data = c(-Inf, 0, 0), nrow = 1), right = FALSE)
+        }
+        if (max(minmax(lyr_pred)[,1]) == 0) {
+            return(paste0(sp, "_all-zero-on-starea"))
         }
 
         if (type == "const") {
@@ -205,7 +216,7 @@ if (parallel) {
             results_folder, out_folder, global_mask,
             sel_threshold = post_grid$sel_threshold[g],
             type = post_grid$type[g],
-            alpha = 0.5, model_acro = "mpaeu",
+            alpha = 0.5, model_acro = "mpaeu", base_file = base_file,
             check_exists = TRUE, verbose = FALSE,
             max_mem = max_mem, .progress = TRUE
         )
@@ -218,7 +229,7 @@ if (parallel) {
             results_folder, out_folder, global_mask,
             sel_threshold = post_grid$sel_threshold[g],
             type = post_grid$type[g],
-            alpha = 0.5, model_acro = "mpaeu",
+            alpha = 0.5, model_acro = "mpaeu", base_file = base_file,
             check_exists = TRUE, verbose = TRUE
         )
         gc()
