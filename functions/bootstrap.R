@@ -136,7 +136,7 @@ bootstrap_model <- function(species, iterations = 20,
             } else {
                 bp <- best_conf[[to_do[z]]]
             }
-            
+
             # Deal with possible case when number of presences higher than n_back_max or background number
             # which is a problem for down-sampled
             if (to_do[z] == "rf" && unlist(bp$type, use.names = F) == "down-sampled") {
@@ -242,6 +242,7 @@ predict_bootstrap <- function(fit, sdm_data, species, group, hab_depth,
             })
             pred_multi <- terra::rast(pred_multi)
             scores_ens <- attr(fit, "scores")
+            scores_ens[7] <- 0.00000000001 # Fix problem with weight 0
             pred <- weighted.mean(pred_multi, scores_ens, na.rm = T)
         }
 
