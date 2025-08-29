@@ -6,6 +6,99 @@
 #
 #################### Diversity maps - richness and others ######################
 
+library(dplyr)
+library(glue)
+library(terra)
+source("functions/post_div_functions.R")
+
+# Settings
+results_folder <- "/data/scps/v5/results"
+out_folder <- "results/diversity"
+preproc_folder <- file.path(out_folder, "preproc")
+fs::dir_create(out_folder)
+fs::dir_create(preproc_folder)
+model_acro <- "mpaeu"
+target_thresholds <- c("p10", "mss")
+target_types <- c("std", "const")
+
+# Step 1 - pre-process layers
+done_species <- get_done_species(results_folder)
+
+prepare_layers(
+    thresholds = target_thresholds,
+    type = target_types,
+    results_folder = results_folder,
+    outfolder = preproc_folder,
+    parallel = TRUE,
+    n_cores = 110,
+    max_mem = TRUE,
+    global_mask = "data/shapefiles/mpa_europe_starea_v3.gpkg",
+    base_file = "data/env/current/thetao_baseline_depthsurf_mean.tif",
+    species = done_species,
+    verbose = TRUE
+)
+
+# Step 2 - assemble
+species_list <- get_sp_list()
+groups <- unique(species_list$group)
+
+proc_list <- list_processed(preproc_folder, write_csv = FALSE)
+
+types_grid <- expand.grid(
+    sel_threshold = target_thresholds,
+    type = target_types
+)
+
+scen_grid <- data.frame(
+    scenario = c("current", rep(paste0("ssp", c(126, 245, 370, 460, 585)), 2)),
+    decade = c(NA, rep(c(2050, 2100), each = 5))
+)
+
+for (tg in seq_len(nrow(types_grid))) {
+    thresh <- types_grid$sel_threshold[tg]
+    mtype <- types_grid$type[tg]
+
+    for (g in seq_len(length(groups))) {
+        sel_species <- species_list$taxonID[species_list$group == groups[g]]
+        av_species <- proc_list |>
+            filter(taxonid %in% sel_species) |>
+            filter(th == thresh) |>
+            filter(type == mtype)
+
+        for (sc in seq_len(nrow(scen_grid))) {
+            scenario <- scen_grid$scenario[sc]
+            decade <- scen_grid$decade[sc]
+
+            if (scenario == "current") {
+                scen_list <- av_species |>
+                    filter(scen == scenario)
+            } else {
+                scen_list <- av_species |>
+                    filter(scen == scenario) |>
+                    filter(period == decade)
+            }
+
+            if (nrow(scen_list) != length(unique(scen_list$taxonid))) stop("Potential problem with list. Check.")
+
+            layers <- rast(file.path(proc_path, scen_list$file))
+
+            # Produce traditional layer
+            cont_richness <- sum(layers)
+
+            # Produce binary layer
+            bin_layers <- classify(layers, matrix(c(0, Inf, 1), nrow = 1))
+            bin_richness <- sum(bin_layers)
+
+            # TODO
+
+        }
+    }
+}
+
+
+
+
+# OLD CODE
 # Load packages/settings -----
 library(progress)
 library(arrow)

@@ -35,6 +35,342 @@ get_sp_list <- function() {
     return(sp_list)
 }
 
+get_done_species <- function(results_folder) {
+    species <- list.files(results_folder)
+    species <- gsub("taxonid=", "", species)
+    return(species)
+}
+
+# Create a function to check good model -------
+check_model <- function(results_folder, sp) {
+    l <- jsonlite::read_json(glue(
+        "{results_folder}/taxonid={sp}/model=mpaeu/taxonid={sp}_model=mpaeu_what=log.json"
+    ))
+    goodm <- unlist(l$model_good, use.names = F)
+    if (is.numeric(goodm)) {
+        goodm <- "esm"
+    }
+    if ("ensemble" %in% goodm) {
+        best_m <- "ensemble"
+    } else {
+        evals <- lapply(goodm, \(mm) {
+            mmb <- ifelse(mm == "rf", "rf_classification_ds", mm)
+            eval <- arrow::read_parquet(glue(
+                "{results_folder}/taxonid={sp}/model=mpaeu/metrics/taxonid={sp}_model=mpaeu_method={mmb}_what=cvmetrics.parquet"
+            ))
+            eval <- eval |>
+                select(AUC = auc, CBI = cbi, TSS = tss_maxsss)
+            eval <- round(apply(eval, 2, mean, na.rm = T), 2)
+            eval <- as.data.frame(t(eval))
+            eval$model <- mm
+            eval
+        })
+        evals <- bind_rows(evals)
+
+        best_m <- evals$model[which.max(evals$CBI)]
+        best_m <- ifelse(best_m == "rf", "rf_classification_ds", best_m)
+    }
+    return(best_m)
+}
+
+# Create a function to do the processing --------
+proc_layers <- function(sp, results_folder, out_folder, global_mask, base_file = "same",
+                        sel_threshold = "p10", type = "std",
+                        model_acro = "mpaeu", max_dispersal_const = 100000,
+                        check_exists = TRUE, verbose = TRUE, max_mem = NULL) {
+
+    if (!is.null(max_mem)) terra::terraOptions(memfrac = max_mem)
+    if (verbose) message("Processing ", sp)
+
+    if (!type %in% c("std", "const")) stop("`type` should be one of 'std' or 'const'")
+
+    best_m <- check_model(results_folder, sp)
+
+    global_mask <- vect(global_mask)
+
+    # Load mask
+    masks <- rast(glue(
+        "{results_folder}/taxonid={sp}/model={model_acro}/predictions/taxonid={sp}_model={model_acro}_mask_cog.tif"
+    ))
+    masks <- subset(masks, ifelse(type == "std", "fit_region", "fit_region_max_depth"))
+    NAflag(masks) <- 0
+
+    # Load threshold
+    thresholds <- arrow::read_parquet(glue(
+        "{results_folder}/taxonid={sp}/model={model_acro}/metrics/taxonid={sp}_model={model_acro}_what=thresholds.parquet"
+    ))
+
+    th <- thresholds[grepl(strtrim(best_m, 2), thresholds$model), ]
+    if (sel_threshold == "mss") {
+        th <- th |> pull(max_spec_sens) * 100
+    } else if (sel_threshold == "p10") {
+        th <- th |> pull(p10) * 100
+    } else {
+        stop("Threshold not available")
+    }
+
+    all_preds <- list.files(glue("{results_folder}/taxonid={sp}/model={model_acro}/predictions"), full.names = T)
+    all_preds <- all_preds[grepl(best_m, all_preds)]
+
+    model_preds <- all_preds[!grepl("what=bootcv", all_preds)]
+
+    if (base_file == "same") {
+        base <- model_preds[1] |>
+            rast()
+    } else {
+        base <- base_file |>
+            rast()
+    }
+
+    base <- base |>
+        terra::classify(matrix(data = c(-Inf, Inf, 0), nrow = 1), right = FALSE) |>
+        crop(global_mask) |>
+        mask(global_mask)
+
+    if (type == "const") {
+        # Load points and apply buffer
+        fit_pts <- arrow::read_parquet(file.path(
+            results_folder,
+            glue::glue("taxonid={sp}/model={model_acro}/taxonid={sp}_model={model_acro}_what=fitocc.parquet")
+        ))
+        fit_pts <- terra::vect(as.data.frame(fit_pts), geom = c("decimalLongitude", "decimalLatitude"), crs = "EPSG:4326")
+        fit_pts_buffer <- terra::buffer(fit_pts, max_dispersal_const)
+    }
+
+    if (verbose) {
+        pb <- progress::progress_bar$new(total = length(model_preds))
+    }
+
+    for (lp in model_preds) {
+
+        if (verbose) pb$tick()
+
+        basef <- basename(lp)
+        basef <- gsub("_cog.tif", glue("_th={sel_threshold}_type={type}.tif"), basef)
+        if (check_exists) {
+            if (file.exists(file.path(out_folder, basef))) next
+        }
+
+        lyr_pred <- rast(lp)[[1]]
+
+        lyr_pred <- terra::classify(lyr_pred, matrix(data = c(-Inf, th, 0), nrow = 1), right = FALSE)
+
+        lyr_pred <- lyr_pred |>
+            mask(masks) |>
+            mask(global_mask) |>
+            crop(global_mask) |>
+            sum(base, na.rm = TRUE)
+
+        if (all(is.na(minmax(lyr_pred)))) {
+            return(paste0(sp, "_empty-on-starea"))
+        } else if (minmax(lyr_pred)["min", ] < 0) {
+            lyr_pred <- terra::classify(lyr_pred, matrix(data = c(-Inf, 0, 0), nrow = 1), right = FALSE)
+        }
+        if (max(minmax(lyr_pred)[,1]) == 0) {
+            return(paste0(sp, "_all-zero-on-starea"))
+        }
+
+        if (type == "const") {
+            pred_masked <- terra::mask(lyr_pred, lyr_pred != 0, maskvalues = 0)
+
+            # Label patches and get polygon
+            pred_patches <- terra::patches(pred_masked, directions = 8)
+            patches_pols <- terra::as.polygons(pred_patches, dissolve = TRUE)
+
+            # Find intersections
+            touched_pt <- terra::intersect(patches_pols, fit_pts_buffer)
+            touched_pt_ids <- unique(terra::values(touched_pt)[[1]])
+
+            # Mask original
+            touched_pt_f <- terra::classify(pred_patches, rcl = cbind(setdiff(unique(terra::values(pred_patches)), touched_pt_ids), NA))
+            touched_pt_f <- terra::classify(touched_pt_f, matrix(c(-Inf, Inf, 1), ncol = 3))
+            lyr_pred <- pred_masked |>
+                mask(touched_pt_f) |>
+                sum(base, na.rm = TRUE)
+
+            if (minmax(lyr_pred)["min", ] < 0) {
+                lyr_pred <- terra::classify(lyr_pred, matrix(data = c(-Inf, 0, 0), nrow = 1), right = FALSE)
+            }
+        }
+
+        writeRaster(
+            lyr_pred,
+            file.path(out_folder, basef),
+            datatype = "INT1U",
+            overwrite = TRUE
+        )
+    }
+
+    return(paste0(sp, "_done"))
+}
+
+prepare_layers <- function(
+    thresholds = c("p10", "mss"),
+    type = c("std", "const"),
+    results_folder,
+    outfolder,
+    parallel = FALSE,
+    n_cores = 80,
+    max_mem = NULL, # use TRUE to use standard method (0.9/n_cores)
+    global_mask = "data/shapefiles/mpa_europe_starea_v3.gpkg",
+    base_file = "data/env/current/thetao_baseline_depthsurf_mean.tif",
+    species = NULL, # pass species here to speed up, otherwise listed from folder
+    verbose = FALSE
+) {
+    require(glue)
+    require(dplyr)
+    require(terra)
+
+    fs::dir_create(out_folder)
+    
+    if (is.logical(max_mem) && isTRUE(max_mem)) max_mem <- (0.9 / n_cores)
+
+    if (is.null(species)) species <- get_done_species()
+
+    # Apply processing -----
+    post_grid <- expand.grid(
+        sel_threshold = thresholds,
+        type = type
+    )
+
+    if (parallel) {
+        require("furrr")
+        plan(multisession, workers = n_cores)
+
+        for (g in seq_len(nrow(post_grid))) {
+            message("Processing ", post_grid$sel_threshold[g], " | ", post_grid$type[g], " (", g, ")\n")
+            proc_result <- future_map(species, proc_layers,
+                results_folder, out_folder, global_mask,
+                sel_threshold = post_grid$sel_threshold[g],
+                type = post_grid$type[g],
+                model_acro = "mpaeu", base_file = base_file,
+                check_exists = TRUE, verbose = FALSE,
+                max_mem = max_mem, .progress = verbose
+            )
+            gc()
+        }
+
+        plan(sequential)
+    } else {
+        for (g in seq_len(nrow(post_grid))) {
+            message("Processing ", post_grid$sel_threshold[g], " | ", post_grid$type[g], " (", g, ")\n")
+            proc_result <- lapply(species, proc_layers,
+                results_folder, out_folder, global_mask,
+                sel_threshold = post_grid$sel_threshold[g],
+                type = post_grid$type[g],
+                model_acro = "mpaeu", base_file = base_file,
+                check_exists = TRUE, verbose = verbose
+            )
+            gc()
+        }
+    }
+
+    if (verbose) message("Processing concluded.")
+    return(invisible(NULL))
+}
+
+list_processed <- function(out_folder, write_csv = TRUE, csv_folder = NULL) {
+  if (is.null(csv_folder)) csv_folder <- getwd()
+
+  done_files <- list.files(out_folder)
+  general_files <- strsplit(done_files, "_")
+  general_files <- lapply(general_files, \(x) {
+      x_r <- lapply(x, \(y) {
+          y <- strsplit(gsub("\\.tif", "", y), "=")
+          y <- unlist(y, use.names = F)
+          yr <- data.frame(n = y[2])
+          names(yr) <- y[1]
+          return(yr)
+      })
+      x_r <- do.call("cbind", x_r)
+      if ("dec50" %in% names(x_r)) {
+          x_r["dec50"] <- "2050"
+          names(x_r)[names(x_r) == "dec50"] <- "period"
+      } else if ("dec100" %in% names(x_r)) {
+          x_r["dec100"] <- "2100"
+          names(x_r)[names(x_r) == "dec100"] <- "period"
+      }
+      x_r
+  })
+  general_files <- as.data.frame(do.call("rbind", general_files))
+  general_files$file <- done_files
+  if ("classification" %in% colnames(general_files)) {
+    general_files <- general_files[,which(!colnames(general_files) %in% c("classification", "ds"))]
+    general_files$method[general_files$method == "rf"] <- "rf_classification_ds"
+  }
+  
+  if (write_csv) {
+    write.csv(general_files, file.path(csv_folder, "processed_files.csv"), row.names = FALSE)
+    return(invisible(NULL))
+  } else {
+    return(general_files)
+  }
+}
+
+zip_processed <- function(out_folder, by_type = TRUE, save_folder = NULL) {
+  done_files <- list.files(out_folder)
+  if (is.null(save_folder)) save_folder <- getwd()
+
+  zip_files <- c()
+
+  if (by_type) {
+    p10_std <- done_files[grepl("th=p10_type=std", done_files)]
+    mss_std <- done_files[grepl("th=mss_type=std", done_files)]
+    p10_cons <- done_files[grepl("th=p10_type=cons", done_files)]
+    mss_cons <- done_files[grepl("th=mss_type=cons", done_files)]
+
+    if (length(p10_std) > 0) {
+      message("Zipping p10 std")
+      zip::zip(
+        file.path(save_folder, "processed_p10_std.zip"),
+        file.path(out_folder, p10_std),
+        mode = "cherry-pick"
+      )
+      zip_files <- c(zip_files, file.path(save_folder, "processed_p10_std.zip"))
+    }
+    if (length(mss_std) > 0) {
+      message("Zipping mss std")
+      zip::zip(
+        file.path(save_folder, "processed_mss_std.zip"),
+        file.path(out_folder, mss_std),
+        mode = "cherry-pick"
+      )
+      zip_files <- c(zip_files, file.path(save_folder, "processed_mss_std.zip"))
+    }
+    if (length(p10_cons) > 0) {
+      message("Zipping p10 cons")
+      zip::zip(
+        file.path(save_folder, "processed_p10_cons.zip"),
+        file.path(out_folder, p10_cons),
+        mode = "cherry-pick"
+      )
+      zip_files <- c(zip_files, file.path(save_folder, "processed_mss_std.zip"))
+    }
+    if (length(mss_cons) > 0) {
+      message("Zipping mss cons")
+      zip::zip(
+        file.path(save_folder, "processed_mss_cons.zip"),
+        file.path(out_folder, mss_cons),
+        mode = "cherry-pick"
+      )
+      zip_files <- c(zip_files, file.path(save_folder, "processed_mss_cons.zip"))
+    }
+  } else {
+    message("Zipping all - this may take some time...")
+    zip::zip(
+      file.path(save_folder, "processed_all.zip"),
+      file.path(out_folder, done_files),
+      mode = "cherry-pick"
+    )
+    zip_files <- c(zip_files, file.path(save_folder, "processed_all.zip"))
+  }
+  cli::cli_alert_success("Files saved at {.file {zip_files}}")
+  return(invisible(NULL))
+}
+
+
+# Old code, for back compatibility - to be removed soon
+
 raw_processing <- function(gr, sp_list, base_raw, study_area, output_folder, acro, eez_cell = NULL, protseas_cell = NULL) {
   
   grsp_raw <- sp_list$taxonID[sp_list$group == gr]
