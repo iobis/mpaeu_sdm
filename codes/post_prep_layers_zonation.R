@@ -15,9 +15,9 @@ library(terra)
 out_folder <- "/data/scps/processed_layers_v2"
 fs::dir_create(out_folder)
 results_folder <- "/data/scps/v5/results"
-parallel <- FALSE
-n_cores <- 80
-max_mem <- (0.9 / n_cores)
+parallel <- TRUE
+n_cores <- 110
+max_mem <- (0.7 / n_cores)
 global_mask <- "data/shapefiles/mpa_europe_starea_v3.gpkg"
 base_file <- "data/env/current/thetao_baseline_depthsurf_mean.tif"
 
@@ -56,6 +56,7 @@ check_model <- function(results_folder, sp) {
     }
     return(best_m)
 }
+
 
 # Create a function to do the processing --------
 proc_layers <- function(sp, results_folder, out_folder, global_mask, base_file = "same",
@@ -162,8 +163,10 @@ proc_layers <- function(sp, results_folder, out_folder, global_mask, base_file =
         } else if (minmax(lyr_pred)["min", ] < 0) {
             lyr_pred <- terra::classify(lyr_pred, matrix(data = c(-Inf, 0, 0), nrow = 1), right = FALSE)
         }
-        if (max(minmax(lyr_pred)[,1]) == 0) {
-            return(paste0(sp, "_all-zero-on-starea"))
+        if (lp == model_preds[1]) {
+            if (max(minmax(lyr_pred)[,1]) == 0) {
+                return(paste0(sp, "_all-zero-on-starea"))
+            }
         }
 
         if (type == "const") {
@@ -186,6 +189,12 @@ proc_layers <- function(sp, results_folder, out_folder, global_mask, base_file =
 
             if (minmax(lyr_pred)["min", ] < 0) {
                 lyr_pred <- terra::classify(lyr_pred, matrix(data = c(-Inf, 0, 0), nrow = 1), right = FALSE)
+            }
+
+            if (lp == model_preds[1]) {
+                if (max(minmax(lyr_pred)[,1]) == 0) {
+                    return(paste0(sp, "_all-zero-on-starea"))
+                }
             }
         }
 

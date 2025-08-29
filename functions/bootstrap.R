@@ -136,6 +136,17 @@ bootstrap_model <- function(species, iterations = 20,
             } else {
                 bp <- best_conf[[to_do[z]]]
             }
+            
+            # Deal with possible case when number of presences higher than n_back_max or background number
+            # which is a problem for down-sampled
+            if (to_do[z] == "rf" && unlist(bp$type, use.names = F) == "down-sampled") {
+                if (sum(sp_data$training$presence) > sum(sp_data$training$presence == 0)) {
+                    new_index <- tapply(seq_len(nrow(sp_data$training)), sp_data$training$presence, \(x) sample(x, sum(sp_data$training$presence == 0)))
+                    new_index <- unlist(new_index, use.names = F)
+                    sp_data$training <- sp_data$training[new_index,]
+                    sp_data$coord_training <- sp_data$coord_training[new_index,]
+                }
+            }
 
             fit <- try(obissdm::model_bootstrap(sp_data, algo = to_do[z], params = bp, verbose = verbose), silent = T)
             
@@ -152,6 +163,14 @@ bootstrap_model <- function(species, iterations = 20,
                                                     pred_quad = sampled_quad[samp_quad, ],
                                                     verbose = verbose
                 )
+                if (to_do[z] == "rf" && unlist(bp$type, use.names = F) == "down-sampled") {
+                    if (sum(sp_data$training$presence) > sum(sp_data$training$presence == 0)) {
+                        new_index <- tapply(seq_len(nrow(sp_data$training)), sp_data$training$presence, \(x) sample(x, sum(sp_data$training$presence == 0)))
+                        new_index <- unlist(new_index, use.names = F)
+                        sp_data$training <- sp_data$training[new_index,]
+                        sp_data$coord_training <- sp_data$coord_training[new_index,]
+                    }
+                }
                 fit <- try(obissdm::model_bootstrap(sp_data, algo = to_do[z], params = bp, verbose = verbose), silent = T)
                 initc <- initc + 1
               }
