@@ -28,7 +28,7 @@ prepare_layers(
     thresholds = target_thresholds,
     type = target_types,
     results_folder = results_folder,
-    outfolder = preproc_folder,
+    out_folder = preproc_folder,
     parallel = TRUE,
     n_cores = 110,
     max_mem = TRUE,
