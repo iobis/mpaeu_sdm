@@ -442,6 +442,78 @@ sesam_prr <- function(probabilities, richness) {
 # all.equal(as.vector(ppr), as.vector(ppr_v2[]))
 
 
+# Implements a fast C++ code of the LCBD as done in adespatial::beta.div()
+Rcpp::cppFunction('
+NumericVector lcbd_cpp(const NumericMatrix& Y) {
+  // Generated using LLM tool: ChatGPT
+
+  int n = Y.nrow();
+  int m = Y.ncol();
+  
+  // Hellinger transform
+  NumericMatrix Yh(n, m);
+  for (int i = 0; i < n; i++) {
+    double rowsum = 0.0;
+    for (int j = 0; j < m; j++) {
+      rowsum += Y(i, j);
+    }
+    if (rowsum > 0) {
+      for (int j = 0; j < m; j++) {
+        Yh(i, j) = sqrt(Y(i, j) / rowsum);
+      }
+    }
+  }
+  
+  // Compute column means (centroid)
+  NumericVector centroid(m);
+  for (int j = 0; j < m; j++) {
+    double sum = 0.0;
+    for (int i = 0; i < n; i++) {
+      sum += Yh(i, j);
+    }
+    centroid[j] = sum / n;
+  }
+  
+  // Compute squared distances to centroid
+  NumericVector d2(n);
+  double total = 0.0;
+  for (int i = 0; i < n; i++) {
+    double dist2 = 0.0;
+    for (int j = 0; j < m; j++) {
+      double diff = Yh(i, j) - centroid[j];
+      dist2 += diff * diff;
+    }
+    d2[i] = dist2;
+    total += dist2;
+  }
+  
+  // LCBD values
+  NumericVector LCBD(n);
+  for (int i = 0; i < n; i++) {
+    LCBD[i] = d2[i] / total;
+  }
+  
+  return LCBD;
+}
+')
+
+# Validate code
+# library(adespatial)
+# library(vegan)
+# data(mite)
+# tictoc::tic()
+# res <- beta.div(mite, adj = F)
+# tictoc::toc()
+# tictoc::tic()
+# res_cpp <- lcbd_cpp(as.matrix(mite))
+# tictoc::toc()
+# all.equal(unname(res$LCBD), res_cpp)
+
+
+
+
+
+
 
 # Old code, for back compatibility - to be removed soon
 

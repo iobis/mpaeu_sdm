@@ -84,7 +84,7 @@ for (tg in seq_len(nrow(types_grid))) {
       scen <- scen_grid$scenario[sc]
       decade <- scen_grid$decade[sc]
 
-      if (scenario == "current") {
+      if (scen == "current") {
         scen_list <- av_species |>
           filter(scenario == scen)
       } else {
@@ -120,6 +120,28 @@ for (tg in seq_len(nrow(types_grid))) {
       save_raster(bin_richness, file.path(out_folder, tempf))
       tempf <- paste0(base_f, "_group=", gsub("\\/", "-", tolower(groups[g])), "_what=sesam.tif")
       save_raster(sesam_richness, file.path(out_folder, tempf))
+
+      # LCBD
+      coarse_binary <- aggregate(bin_layers, 5, max, na.rm = T)
+      coarse_binary_df <- as.data.frame(coarse_binary, cell = T)
+      cells <- coarse_binary_df[, 1]
+      coarse_binary_df <- coarse_binary_df[, 2:ncol(coarse_binary_df)]
+      valid_cells <- rowSums(coarse_binary_df)
+      valid_cells <- which(valid_cells > 0)
+      cells <- cells[valid_cells]
+      coarse_binary_df <- coarse_binary_df[valid_cells, ]
+      beta_div <- lcbd_cpp(as.matrix(coarse_binary_df))
+      lcbd_rast <- coarse_binary[[1]]
+      lcbd_rast[!is.na(lcbd_rast)] <- 0
+      beta_div <- beta_div * (1 / max(beta_div))
+      lcbd_rast[cells] <- beta_div
+
+      base_f <- paste0(
+        "metric=lcbd_",
+        gsub("\\.tif", "", gsub("taxonid=.*_model", "model", scen_list$file[1]))
+      )
+      tempf <- paste0(base_f, "_group=", gsub("\\/", "-", tolower(groups[g])), ".tif")
+      save_raster(lcbd_rast, file.path(out_folder, tempf))
     }
 
     # Load true richness
@@ -151,11 +173,7 @@ for (tg in seq_len(nrow(types_grid))) {
     true_richness[records$cell] <- records$richness
     true_richness <- mask(true_richness, coarse_raster)
 
-    base_f <- paste0(
-      "metric=richness_",
-      gsub("\\.tif", "", gsub("taxonid=.*_model", "model", scen_list$file[1]))
-    )
-    tempf <- paste0(base_f, "_group=", gsub("\\/", "-", tolower(groups[g])), "_what=raw.tif")
+    tempf <- paste0("metric=richness_model=", model_acro, "_group=", gsub("\\/", "-", tolower(groups[g])), "_what=raw.tif")
     save_raster(true_richness, file.path(out_folder, tempf))
   }
 }
