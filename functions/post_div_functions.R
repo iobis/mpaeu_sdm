@@ -357,6 +357,91 @@ zip_processed <- function(out_folder, by_type = TRUE, save_folder = NULL) {
   return(invisible(NULL))
 }
 
+# SESAM richness correction
+# Check https://onlinelibrary.wiley.com/doi/abs/10.1111/jbi.13608
+Rcpp::cppFunction('
+NumericVector sesam_fast(NumericVector cell) {
+  // Converted from R code with help of ChatGPT
+  // first element is the richness
+  int rich = (int)round(cell[0]);
+  // The rest is the probabilities
+  int nsp = cell.size() - 1;
+  NumericVector probs(nsp);
+  for (int i = 0; i < nsp; i++) {
+    probs[i] = cell[i + 1];
+  }
+  // If any is NA, need to return NA
+  for (int i = 0; i < nsp; i++) {
+    if (NumericVector::is_na(probs[i]) || NumericVector::is_na(cell[0])) {
+      NumericVector out(nsp, NA_REAL);
+      return out;
+    }
+  }
+  // If not proceed
+  if (rich > 0) {
+    // vector to hold indices
+    std::vector<int> idx(nsp);
+    for (int i = 0; i < nsp; i++) idx[i] = i;
+
+    // sort indices by probs (descending)
+    std::sort(idx.begin(), idx.end(),
+      [&](int a, int b) { return probs[a] > probs[b]; });
+    // convert to 0/1
+    NumericVector out(nsp);
+    for (int i = 0; i < rich && i < nsp; i++) {
+      out[idx[i]] = 1.0;
+    }
+    // others remain 0
+    return out;
+  } else {
+    // No richness, returns 0
+    NumericVector out(nsp);
+    std::fill(out.begin(), out.end(), 0.0);
+    return out;
+  }
+}
+')
+
+sesam_prr <- function(probabilities, richness) {
+    # Modified version of ecospat::ecospat.SESAM.prr to work with terra raster
+    # terra::app(c(richness, probabilities), \(cell) {
+    #     nc <- names(cell)[-1]
+    #     cell <- unlist(cell, use.names = F)
+    #     rich <- as.integer(round(cell[1]))
+    #     probs <- cell[2:length(cell)]
+    #     if (rich > 0) {
+    #         com <- order(probs, decreasing = TRUE)
+    #         pres <- com[1:rich]
+    #         probs[pres] <- 1
+    #         probs[-pres] <- 0
+    #     } else {
+    #         probs[] <- 0
+    #     }
+    #     names(probs) <- nc
+    #     return(probs)
+    # })
+    terra::app(c(richness, probabilities), sesam_fast)
+}
+
+# Validation of this function
+# library(ecospat)
+# proba <- ecospat.testData[,73:92]
+# sr <- as.data.frame(rowSums(proba))
+# ppr<-ecospat.SESAM.prr(proba, sr)
+# head(ppr)
+# # Test ours
+# library(terra)
+# prob_r <- rast(nlyr = 20, ncol = 10, nrow = 30)
+# for (i in 1:20) {
+#     prob_r[[i]][] <- proba[,i]
+# }
+# ric_r <- sum(prob_r)
+# ppr_v2 <- sesam_prr(prob_r, ric_r)
+# ppr <- rowSums(ppr)
+# ppr_v2 <- sum(ppr_v2)
+# all.equal(as.vector(ppr), as.vector(ppr_v2[]))
+
+
 
 # Old code, for back compatibility - to be removed soon
 

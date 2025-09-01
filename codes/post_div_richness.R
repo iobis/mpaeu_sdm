@@ -25,17 +25,17 @@ target_types <- c("std", "const")
 done_species <- get_done_species(results_folder)
 
 prepare_layers(
-    thresholds = target_thresholds,
-    type = target_types,
-    results_folder = results_folder,
-    out_folder = preproc_folder,
-    parallel = TRUE,
-    n_cores = 110,
-    max_mem = TRUE,
-    global_mask = "data/shapefiles/mpa_europe_starea_v3.gpkg",
-    base_file = "data/env/current/thetao_baseline_depthsurf_mean.tif",
-    species = done_species,
-    verbose = TRUE
+  thresholds = target_thresholds,
+  type = target_types,
+  results_folder = results_folder,
+  out_folder = preproc_folder,
+  parallel = TRUE,
+  n_cores = 110,
+  max_mem = TRUE,
+  global_mask = "data/shapefiles/mpa_europe_starea_v3.gpkg",
+  base_file = "data/env/current/thetao_baseline_depthsurf_mean.tif",
+  species = done_species,
+  verbose = TRUE
 )
 
 # Step 2 - assemble
@@ -45,54 +45,119 @@ groups <- unique(species_list$group)
 proc_list <- list_processed(preproc_folder, write_csv = FALSE)
 
 types_grid <- expand.grid(
-    sel_threshold = target_thresholds,
-    type = target_types
+  sel_threshold = target_thresholds,
+  type = target_types
 )
 
 scen_grid <- data.frame(
-    scenario = c("current", rep(paste0("ssp", c(126, 245, 370, 460, 585)), 2)),
-    decade = c(NA, rep(c(2050, 2100), each = 5))
+  scenario = c("current", rep(paste0("ssp", c(126, 245, 370, 460, 585)), 2)),
+  decade = c(NA, rep(c(2050, 2100), each = 5))
 )
 
+save_raster <- \(r, file, as_cog = TRUE) {
+  r <- as.int(r)
+  writeRaster(r, file, datatype = "INT2U")
+  obissdm::cogeo_optim(file)
+  return(invisible(NULL))
+}
+
 for (tg in seq_len(nrow(types_grid))) {
-    thresh <- types_grid$sel_threshold[tg]
-    mtype <- types_grid$type[tg]
+  cli::cli_alert_info(cli::bg_cyan("Combination {tg} out of {nrow(types_grid)}"))
+  thresh <- types_grid$sel_threshold[tg]
+  mtype <- types_grid$type[tg]
 
-    for (g in seq_len(length(groups))) {
-        sel_species <- species_list$taxonID[species_list$group == groups[g]]
-        av_species <- proc_list |>
-            filter(taxonid %in% sel_species) |>
-            filter(th == thresh) |>
-            filter(type == mtype)
-
-        for (sc in seq_len(nrow(scen_grid))) {
-            scenario <- scen_grid$scenario[sc]
-            decade <- scen_grid$decade[sc]
-
-            if (scenario == "current") {
-                scen_list <- av_species |>
-                    filter(scen == scenario)
-            } else {
-                scen_list <- av_species |>
-                    filter(scen == scenario) |>
-                    filter(period == decade)
-            }
-
-            if (nrow(scen_list) != length(unique(scen_list$taxonid))) stop("Potential problem with list. Check.")
-
-            layers <- rast(file.path(proc_path, scen_list$file))
-
-            # Produce traditional layer
-            cont_richness <- sum(layers)
-
-            # Produce binary layer
-            bin_layers <- classify(layers, matrix(c(0, Inf, 1), nrow = 1))
-            bin_richness <- sum(bin_layers)
-
-            # TODO
-
-        }
+  for (g in seq_len(length(groups))) {
+    cli::cli_alert_info(cli::bg_green("Group {g} out of {length(groups)}"))
+    if (groups[g] == "all") {
+      sel_species <- species_list$taxonID
+    } else {
+      sel_species <- species_list$taxonID[species_list$group == groups[g]]
     }
+    av_species <- proc_list |>
+      filter(taxonid %in% sel_species) |>
+      filter(threshold == thresh) |>
+      filter(type == mtype)
+
+    pb <- progress::progress_bar$new(total = nrow(scen_grid))
+    for (sc in seq_len(nrow(scen_grid))) {
+      pb$tick()
+      scen <- scen_grid$scenario[sc]
+      decade <- scen_grid$decade[sc]
+
+      if (scenario == "current") {
+        scen_list <- av_species |>
+          filter(scenario == scen)
+      } else {
+        scen_list <- av_species |>
+          filter(scenario == scen) |>
+          filter(period == decade)
+      }
+
+      if (nrow(scen_list) != length(unique(scen_list$taxonid))) stop("Potential problem with list. Check.")
+
+      layers <- rast(file.path(preproc_folder, scen_list$file))
+
+      # Produce traditional layer
+      cont_richness <- sum(layers)
+      cont_richness <- cont_richness / 100
+
+      # Produce binary layer
+      bin_layers <- classify(layers, matrix(c(0, Inf, 1), nrow = 1))
+      bin_richness <- sum(bin_layers)
+
+      # SESAM probabilities
+      sesam_richness <- sesam_prr(layers, cont_richness)
+      sesam_richness <- sum(sesam_richness)
+
+      # Save rasters
+      base_f <- paste0(
+        "metric=richness_",
+        gsub("\\.tif", "", gsub("taxonid=.*_model", "model", scen_list$file[1]))
+      )
+      tempf <- paste0(base_f, "_group=", gsub("\\/", "-", tolower(groups[g])), "_what=continuous.tif")
+      save_raster(cont_richness, file.path(out_folder, tempf))
+      tempf <- paste0(base_f, "_group=", gsub("\\/", "-", tolower(groups[g])), "_what=binary.tif")
+      save_raster(bin_richness, file.path(out_folder, tempf))
+      tempf <- paste0(base_f, "_group=", gsub("\\/", "-", tolower(groups[g])), "_what=sesam.tif")
+      save_raster(sesam_richness, file.path(out_folder, tempf))
+    }
+
+    # Load true richness
+    coarse_raster <- aggregate(cont_richness, 10)
+
+    records <- dplyr::bind_rows(
+      lapply(
+        file.path(
+          results_folder,
+          glue::glue("taxonid={av_species$taxonid}/model={model_acro}/taxonid={av_species$taxonid}_model={model_acro}_what=fitocc.parquet")
+        ),
+        \(x) {
+          df <- arrow::read_parquet(x)
+          df$cell <- cellFromXY(coarse_raster, as.data.frame(df))
+          df$taxonID <- gsub("_.*", "", basename(x))
+          df <- df[!is.na(df$cell), ]
+          df
+        }
+      )
+    )
+    records <- records |>
+      group_by(cell) |>
+      distinct(taxonID) |>
+      count() |>
+      rename(richness = n)
+
+    true_richness <- coarse_raster
+    true_richness[] <- NA
+    true_richness[records$cell] <- records$richness
+    true_richness <- mask(true_richness, coarse_raster)
+
+    base_f <- paste0(
+      "metric=richness_",
+      gsub("\\.tif", "", gsub("taxonid=.*_model", "model", scen_list$file[1]))
+    )
+    tempf <- paste0(base_f, "_group=", gsub("\\/", "-", tolower(groups[g])), "_what=raw.tif")
+    save_raster(true_richness, file.path(out_folder, tempf))
+  }
 }
 
 
