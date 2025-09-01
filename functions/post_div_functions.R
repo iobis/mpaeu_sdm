@@ -273,32 +273,21 @@ list_processed <- function(out_folder, write_csv = TRUE, csv_folder = NULL) {
   if (is.null(csv_folder)) csv_folder <- getwd()
 
   done_files <- list.files(out_folder)
-  general_files <- strsplit(done_files, "_")
-  general_files <- lapply(general_files, \(x) {
-      x_r <- lapply(x, \(y) {
-          y <- strsplit(gsub("\\.tif", "", y), "=")
-          y <- unlist(y, use.names = F)
-          yr <- data.frame(n = y[2])
-          names(yr) <- y[1]
-          return(yr)
-      })
-      x_r <- do.call("cbind", x_r)
-      if ("dec50" %in% names(x_r)) {
-          x_r["dec50"] <- "2050"
-          names(x_r)[names(x_r) == "dec50"] <- "period"
-      } else if ("dec100" %in% names(x_r)) {
-          x_r["dec100"] <- "2100"
-          names(x_r)[names(x_r) == "dec100"] <- "period"
-      }
-      x_r
-  })
-  general_files <- as.data.frame(do.call("rbind", general_files))
+  done_files_m <- gsub("\\.tif", "", done_files)
+  done_files_m <- gsub("rf_classification_ds", "rf", done_files_m)
+  done_files_m <- gsub("current", "current_dec0", done_files_m)
+
+  split_parts <- data.table::tstrsplit(done_files_m, "_")
+  split_parts <- unlist(split_parts, use.names = F)
+  split_parts <- gsub(".*=", "", split_parts)
+
+  general_files <- as.data.frame(matrix(split_parts, nrow = length(done_files), byrow = FALSE))
+  colnames(general_files) <- c("taxonid", "model", "method", "scenario", "period", "threshold", "type")
   general_files$file <- done_files
-  if ("classification" %in% colnames(general_files)) {
-    general_files <- general_files[,which(!colnames(general_files) %in% c("classification", "ds"))]
-    general_files$method[general_files$method == "rf"] <- "rf_classification_ds"
-  }
-  
+
+  general_files$period[general_files$period == "dec0"] <- NA
+  general_files$method[general_files$method == "rf"] <- "rf_classification_ds"
+
   if (write_csv) {
     write.csv(general_files, file.path(csv_folder, "processed_files.csv"), row.names = FALSE)
     return(invisible(NULL))
