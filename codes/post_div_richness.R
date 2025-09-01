@@ -13,7 +13,7 @@ source("functions/post_div_functions.R")
 
 # Settings
 results_folder <- "/data/scps/v5/results"
-out_folder <- "results/diversity"
+out_folder <- "/data/scps/v5/diversity"
 preproc_folder <- file.path(out_folder, "preproc")
 fs::dir_create(out_folder)
 fs::dir_create(preproc_folder)

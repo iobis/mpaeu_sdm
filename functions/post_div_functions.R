@@ -208,7 +208,7 @@ prepare_layers <- function(
     thresholds = c("p10", "mss"),
     type = c("std", "const"),
     results_folder,
-    outfolder,
+    out_folder,
     parallel = FALSE,
     n_cores = 80,
     max_mem = NULL, # use TRUE to use standard method (0.9/n_cores)
@@ -234,7 +234,7 @@ prepare_layers <- function(
     )
 
     if (parallel) {
-        require("furrr")
+        require(furrr)
         plan(multisession, workers = n_cores)
 
         for (g in seq_len(nrow(post_grid))) {
