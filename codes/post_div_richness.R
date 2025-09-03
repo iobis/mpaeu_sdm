@@ -41,6 +41,7 @@ prepare_layers(
 # Step 2 - assemble
 species_list <- get_sp_list()
 groups <- unique(species_list$group)
+groups <- c(groups, "all")
 
 proc_list <- list_processed(preproc_folder, write_csv = FALSE)
 
@@ -56,7 +57,7 @@ scen_grid <- data.frame(
 
 save_raster <- \(r, file, as_cog = TRUE) {
   r <- as.int(r)
-  writeRaster(r, file, datatype = "INT2U")
+  writeRaster(r, file, datatype = "INT2U", overwrite = TRUE)
   obissdm::cogeo_optim(file)
   return(invisible(NULL))
 }
@@ -95,7 +96,11 @@ for (tg in seq_len(nrow(types_grid))) {
 
       if (nrow(scen_list) != length(unique(scen_list$taxonid))) stop("Potential problem with list. Check.")
 
-      layers <- rast(file.path(preproc_folder, scen_list$file))
+      if (interactive()) {
+        layers <- rast(file.path(preproc_folder, scen_list$file))
+      } else {
+        layers <- vrt(file.path(preproc_folder, scen_list$file), options = c("-separate"))
+      }
 
       # Produce traditional layer
       cont_richness <- sum(layers)
