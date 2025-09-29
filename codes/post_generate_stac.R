@@ -9,7 +9,7 @@ dt <- import("datetime")
 project_id <- "mpaeu"
 taxons <- extract_storr()
 taxons <- 100801
-s3_path <- "s3//obis-maps/sdm"
+s3_path <- "s3://obis-maps/sdm"
 sp_results_folder <- "results"
 div_results_folder <- ""
 hab_results_folder <- ""
@@ -86,6 +86,37 @@ for (sp in taxons) {
         arrow::read_parquet()
     fit_extent <- c(min(fit_pts$decimalLongitude), min(fit_pts$decimalLatitude),
                     max(fit_pts$decimalLongitude), max(fit_pts$decimalLatitude))
+    fit_extent <- round(fit_extent, 2)
+
+    log_file <- jsonlite::read_json(
+        file.path(
+            sp_results_folder,
+            glue("taxonid={sp}/model={project_id}/taxonid={sp}_model={project_id}_what=log.json")
+        ), simplifyVector = TRUE
+    )
+
+    if (length(as.vector(log_file$model_good)) > 1) {
+        good_models <- c(as.vector(log_file$model_good), "ensemble")
+    } else {
+        good_models <- as.vector(log_file$model_good)
+    }
+
+    item <- pystac$Item(
+        id = glue("taxonid={sp}"),
+        geometry = NULL,
+        bbox = c(-180, -90, 180, 90),
+        datetime = dt$datetime(2025L, 1L, 1L, tzinfo = dt$timezone$utc),
+        properties = list(
+            taxonid = as.integer(sp),
+            model = project_id,
+            scientificName = as.vector(log_file$scientificName),
+            group = as.vector(log_file$group),
+            hab_depth = as.vector(log_file$hab_depth),
+            fit_bbox = fit_extent,
+            fit_n_points = as.vector(log_file$model_fit_points),
+            methods = good_models
+        )
+    )
 
     for (pred in predictions) {
         method <- gsub("method=", "", sub(".*?(method=.*?)_scen.*", "\\1", pred))
@@ -101,29 +132,14 @@ for (sp in taxons) {
             scenario <- gsub("scen=", "", sub(".*?(scen=.*?)_cog.*", "\\1", pred))
         }
 
-        pred_type <- ifelse(grepl("what=bootcv", pred), "uncertainty", "prediction")
-        
-        item_id <- glue("taxonid={sp}_model={project_id}_method={method}_scen={scenario}_what={pred_type}")
-        file_path <- file.path(s3_path, glue("species/taxonid={sp}/model={project_id}/predictions/{pred}"))
+        pred_type <- gsub(glue("taxonid={sp}_model={project_id}_"), "", pred)
+        if (grepl("bootcv", pred_type)) {
+            pred_type <- gsub("bootcv_cog.tif", "uncertainty", pred_type)
+        } else {
+            pred_type <- gsub("_cog.tif", "_what=prediction", pred_type)
+        }
 
-        item <- pystac$Item(
-            id = item_id,
-            geometry = NULL,
-            bbox = c(-180, -90, 180, 90),
-            datetime = dplyr::case_when(
-                scenario == "current" ~ dt$datetime(2025L, 1L, 1L, tzinfo = dt$timezone$utc),#as.Date("2025-01-01"),
-                grepl("dec50", scenario) ~ dt$datetime(2050L, 1L, 1L, tzinfo = dt$timezone$utc),#as.Date("2050-01-01"),
-                grepl("dec100", scenario) ~ dt$datetime(2100L, 1L, 1L, tzinfo = dt$timezone$utc)#as.Date("2100-01-01")
-            ),
-            properties = list(
-                taxonid = sp,
-                model = project_id,
-                method = method,
-                method_full_name = method_name,
-                scenario = scenario,
-                fit_bbox = fit_extent
-            )
-        )
+        file_path <- file.path(s3_path, glue("species/taxonid={sp}/model={project_id}/predictions/{pred}"))
 
         item$add_asset(
             pred_type,
@@ -133,8 +149,6 @@ for (sp in taxons) {
                 roles = list("data")
             )
         )
-
-        species_collection$add_item(item)
     }
 
     # METRICS ------
@@ -164,48 +178,35 @@ for (sp in taxons) {
                 method_name <- NULL
             }
         }
-        
 
-        item_what <- gsub("what=", "", sub(".*?(what=.*?)\\..*", "\\1", met))
+        item_what_short <- gsub("what=", "", sub(".*?(what=.*?)\\..*", "\\1", met))
         item_explanation <- dplyr::case_when(
-            item_what == "cvmetrics" ~ "Cross-validation metrics",
-            item_what == "fullmetrics" ~ "Metrics on the full data (for reference only, use always the CV metrics)",
-            item_what == "respcurves" ~ "Partial response curves",
-            item_what == "varimportance" ~ "Variables importance",
-            item_what == "biasmetrics" ~ "Data bias metrics (K-function and L-function)",
-            item_what == "posteval_hyperniche" ~ "Post-evaluation: hyperniche",
-            item_what == "posteval_niche" ~ "Post-evaluation: niche overlap",
-            item_what == "thresholds" ~ "Model thresholds",
-            .default = item_what
+            item_what_short == "cvmetrics" ~ "Cross-validation metrics",
+            item_what_short == "fullmetrics" ~ "Metrics on the full data (for reference only, use always the CV metrics)",
+            item_what_short == "respcurves" ~ "Partial response curves",
+            item_what_short == "varimportance" ~ "Variables importance",
+            item_what_short == "biasmetrics" ~ "Data bias metrics (K-function and L-function)",
+            item_what_short == "posteval_hyperniche" ~ "Post-evaluation: hyperniche",
+            item_what_short == "posteval_niche" ~ "Post-evaluation: niche overlap",
+            item_what_short == "thresholds" ~ "Model thresholds",
+            .default = item_what_short
         )
-
-        item_id <- gsub(paste0("\\.", tools::file_ext(met)), "", basename(met))
-        item <- pystac$Item(
-            id = item_id,
-            geometry = NULL,
-            bbox = NULL,
-            datetime = dt$datetime(2025L, 1L, 1L, tzinfo = dt$timezone$utc),#as.Date("2025-01-01"),
-            properties = list(
-                taxonid = sp,
-                model = project_id,
-                method = method,
-                method_full_name = method_name,
-                metric_type = item_what,
-                metric_explanation = item_explanation
-            )
+        item_what <- gsub(
+            paste0("\\.", tools::file_ext(met)), "",
+            gsub(glue("taxonid={sp}_model={project_id}_"), "", met)
         )
 
         file_path <- file.path(s3_path, glue("species/taxonid={sp}/model={project_id}/metrics/{met}"))
         item$add_asset(
-            "metric",
+            item_what,
             pystac$Asset(
                 href = file_path,
+                title = item_what_short,
+                description = item_explanation,
                 media_type = met_type,
                 roles = list("data")
             )
         )
-
-        species_collection$add_item(item)
     }
 
     # MODELS ------
@@ -225,36 +226,20 @@ for (sp in taxons) {
             method == "ensemble" ~ "Ensemble of models"
         )
 
-        item_what <- "model"
+        item_what <- gsub("\\.rds", "", gsub(glue("taxonid={sp}_model={project_id}_"), "", mod))
         item_explanation <- glue("RDS (R serialized format) file containing the model fit for {method}")
-
-        item_id <- gsub(paste0("\\.", tools::file_ext(mod)), "", basename(mod))
-        item <- pystac$Item(
-            id = item_id,
-            geometry = NULL,
-            bbox = NULL,
-            datetime = dt$datetime(2025L, 1L, 1L, tzinfo = dt$timezone$utc),#as.Date("2025-01-01"),
-            properties = list(
-                taxonid = sp,
-                model = project_id,
-                method = method,
-                method_full_name = method_name,
-                metric_type = item_what,
-                metric_explanation = item_explanation
-            )
-        )
 
         file_path <- file.path(s3_path, glue("species/taxonid={sp}/model={project_id}/metrics/{mod}"))
         item$add_asset(
-            "metric",
+            item_what,
             pystac$Asset(
                 href = file_path,
+                title = method_name,
+                description = item_explanation,
                 media_type = mod_type,
                 roles = list("data")
             )
         )
-
-        species_collection$add_item(item)
     }
 
     # OTHER RESOURCES ------
@@ -274,14 +259,11 @@ for (sp in taxons) {
     )
 
     for (other in other_resources) {
-        asset_type <- dplyr::case_when(
-            grepl("what=fitocc", other) ~ "fit_points",
-            grepl("what=log", other) ~ "log_file",
-            grepl("what=mask", other) ~ "predictions_mask",
-            grepl("what=mess", other) ~ "mess_uncertainty",
-            grepl("what=shape", other) ~ "shape_uncertainty",
-            grepl("what=thermenvelope", other) ~ "thermal_envelope"
-        )
+        asset_type <- gsub(paste0("\\.", tools::file_ext(other)), "", gsub(
+            glue("taxonid={sp}_model={project_id}_"), "", other
+        ))
+        asset_type <- gsub("_cog", "", asset_type)
+
         asset_explanation <- dplyr::case_when(
             grepl("what=fitocc", other) ~ "Points used to fit the model",
             grepl("what=log", other) ~ "Log file containing all model details",
@@ -290,6 +272,7 @@ for (sp in taxons) {
             grepl("what=shape", other) ~ "SHAPE uncertainty metric",
             grepl("what=thermenvelope", other) ~ "Thermal envelope (each band is a time period)"
         )
+
         asset_file_type <- dplyr::case_when(
             grepl("what=fitocc", other) ~ "application/vnd.apache.parquet",
             grepl("what=log", other) ~ pystac$MediaType$JSON,
@@ -298,12 +281,6 @@ for (sp in taxons) {
             grepl("what=shape", other) ~ pystac$MediaType$COG,
             grepl("what=thermenvelope", other) ~ pystac$MediaType$COG
         )
-        asset_bbox <- dplyr::case_when(
-            grepl("what=fitocc", other) ~ fit_extent,
-            grepl("what=log", other) ~ NA,
-            .default = c(-180, -90, 180, 90)
-        )
-        if (is.na(asset_bbox[1])) asset_bbox <- NULL
 
         file_sub_path <- dplyr::case_when( 
             grepl("what=fitocc", other) ~ glue("species/taxonid={sp}/model={project_id}/{other}"),
@@ -315,33 +292,19 @@ for (sp in taxons) {
         )
         file_sub_path <- file.path(s3_path, file_sub_path)
 
-        item_id <- gsub(
-            "_cog", "", gsub(paste0("\\.", tools::file_ext(other)), "", basename(other))
-        )
-        item <- pystac$Item(
-            id = item_id,
-            geometry = NULL,
-            bbox = asset_bbox,
-            datetime = dt$datetime(2025L, 1L, 1L, tzinfo = dt$timezone$utc),#as.Date("2025-01-01"),
-            properties = list(
-                taxonid = sp,
-                model = project_id,
-                object_type = asset_type,
-                object_explanation = asset_explanation
-            )
-        )
-
         item$add_asset(
             asset_type,
             pystac$Asset(
                 href = file_sub_path,
                 media_type = asset_file_type,
+                title = gsub("what=", "", asset_type),
+                description = asset_explanation,
                 roles = list("data")
             )
         )
-
-        species_collection$add_item(item)
     }
+
+    species_collection$add_item(item)
 }
 
 #species_collection$describe()
@@ -351,80 +314,3 @@ root_catalog$normalize_and_save(
     root_href = catalog_output,
     catalog_type = pystac$CatalogType$SELF_CONTAINED
 )
-
-
-
-# Project (MPA Europe)
-project_catalog <- pystac$Catalog(
-  id = "project-mpaeu",
-  description = "Species distribution models for the MPA Europe project"
-)
-root_catalog$add_child(project_catalog)
-root_catalog$describe()
-
-Extent <- pystac$Extent
-SpatialExtent <- pystac$SpatialExtent
-TemporalExtent <- pystac$TemporalExtent
-
-species_collection <- pystac$Collection(
-  id = "taxonid=12345",
-  description = "Species distribution models for taxon 12345",
-  extent = Extent(
-    spatial = SpatialExtent(list(list(-180, -90, 180, 90))),
-    temporal = TemporalExtent(list(list(NULL, NULL)))
-  ),
-  license = "CC-BY-4.0"
-)
-project_catalog$add_child(species_collection)
-
-Asset <- pystac$Asset
-MediaType <- pystac$MediaType
-
-species_collection$add_asset(
-  "mask",
-  Asset(
-    href = "s3://yourbucket/results/taxonid=12345/mask.tif",
-    media_type = MediaType$COG,
-    roles = list("mask")
-  )
-)
-Item <- pystac$Item
-
-item <- Item(
-  id = "taxonid=12345_rf_current",
-  geometry = NULL,
-  bbox = list(-180, -90, 180, 90),
-  datetime = as.POSIXct(Sys.Date()),
-  properties = dict(
-    taxonid = "12345",
-    model = "mpaeu",
-    method = "rf",
-    scenario = "current"
-  )
-)
-
-item$add_asset(
-  "prediction",
-  Asset(
-    href = "s3://yourbucket/results/taxonid=12345/model=mpaeu/taxonid=12345_model=mpaeu_method=rf_scen=current_cog.tif",
-    media_type = MediaType$COG,
-    roles = list("data")
-  )
-)
-
-species_collection$add_item(item)
-
-CatalogType <- pystac$CatalogType
-root_catalog$normalize_and_save(
-  root_href = "stac_r_reticulate",
-  catalog_type = CatalogType$SELF_CONTAINED
-)
-
-
-library(rstac)
-s_obj <- stac("stac_r_reticulate/catalog.json", force_version = T)
-get_request(s_obj)
-
-
-root_catalog = pystac$Catalog$from_file("stac_r_reticulate/catalog.json")
-root_catalog$describe()
