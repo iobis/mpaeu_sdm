@@ -8,11 +8,10 @@ dt <- import("datetime")
 #  Project settings --------
 project_id <- "mpaeu"
 taxons <- extract_storr()
-taxons <- 100801
 s3_path <- "s3://obis-maps/sdm"
 sp_results_folder <- "results"
-div_results_folder <- ""
-hab_results_folder <- ""
+div_results_folder <- "diversity"
+hab_results_folder <- "habitat"
 catalog_output <- "stac"
 
 # Root of the catalogue --------
@@ -61,7 +60,11 @@ species_collection <- pystac$Collection(
 species_project_catalog$add_child(species_collection)
 species_project_catalog$describe()
 
+pb <- progress::progress_bar$new(total = length(taxons))
+
 for (sp in taxons) {
+    pb$tick()
+    
     # PREDICTIONS ------
     predictions <- file.path(
         sp_results_folder,
