@@ -1,9 +1,9 @@
 #### MPA EUROPE PROJECT ####
 # June 2023
-# OBIS contribution to the MPA Europe porject
+# OBIS contribution to the MPA Europe project
 # s.principe@unesco.org
 
-#### Get list of marine species occurring on the study area on GBIF
+#### Get list of marine species occurring on the study area on OBIS
 
 # Load packages
 library(sf)

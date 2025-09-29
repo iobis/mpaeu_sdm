@@ -75,3 +75,6 @@ internal/
 
 _packbundle.R
 outbundle.zip
+
+# STAC catalog
+stac/
