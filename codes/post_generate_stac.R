@@ -64,7 +64,7 @@ pb <- progress::progress_bar$new(total = length(taxons))
 
 for (sp in taxons) {
     pb$tick()
-    
+
     # PREDICTIONS ------
     predictions <- file.path(
         sp_results_folder,
@@ -232,7 +232,7 @@ for (sp in taxons) {
         item_what <- gsub("\\.rds", "", gsub(glue("taxonid={sp}_model={project_id}_"), "", mod))
         item_explanation <- glue("RDS (R serialized format) file containing the model fit for {method}")
 
-        file_path <- file.path(s3_path, glue("species/taxonid={sp}/model={project_id}/metrics/{mod}"))
+        file_path <- file.path(s3_path, glue("species/taxonid={sp}/model={project_id}/models/{mod}"))
         item$add_asset(
             item_what,
             pystac$Asset(
