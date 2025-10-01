@@ -8,8 +8,17 @@
 
 library(terra)
 library(glue)
-acro <- "mpaeu"
-res_folder <- "/data/scps/v3/results/"
+source("functions/post_div_functions.R")
+
+# Settings
+results_folder <- "/data/scps/v5/results"
+out_folder <- "/data/scps/v5/habitat"
+preproc_folder <- file.path(out_folder, "preproc")
+fs::dir_create(out_folder)
+fs::dir_create(preproc_folder)
+model_acro <- "mpaeu"
+target_thresholds <- c("p10", "mss")
+target_types <- c("std", "const")
 
 biogenic_groups <- list(
     seagrass = c(
@@ -32,185 +41,103 @@ biogenic_groups <- list(
     )
 )
 
-join_pred_sp <- function(results_folder, model_acro, species, m, sc) {
+# Step 1 - pre-process layers
+prepare_layers(
+    thresholds = target_thresholds,
+    type = target_types,
+    results_folder = results_folder,
+    out_folder = preproc_folder,
+    parallel = TRUE,
+    n_cores = length(unlist(biogenic_groups, use.names = F)),
+    max_mem = TRUE,
+    global_mask = "data/shapefiles/mpa_europe_starea_v3.gpkg",
+    base_file = "data/env/current/thetao_baseline_depthsurf_mean.tif",
+    species = unlist(biogenic_groups, use.names = FALSE),
+    verbose = TRUE
+)
 
-    thresholds <- c("p10", "mtp", "max_spec_sens")
+# Step 2 - assemble
+types_grid <- expand.grid(
+    sel_threshold = target_thresholds,
+    type = target_types
+)
 
-    th_list <- lapply(species, function(x){
-        f <- glue("{results_folder}/taxonid={x}/model={model_acro}/metrics/taxonid={x}_model={model_acro}_what=thresholds.parquet")
-        arrow::read_parquet(f)
-    })
+scen_grid <- data.frame(
+    scenario = c("current", rep(paste0("ssp", c(126, 245, 370, 460, 585)), 2)),
+    decade = c(NA, rep(c(2050, 2100), each = 5))
+)
 
-    results_list <- lapply(1:length(thresholds), function(x) NULL)
+groups <- names(biogenic_groups)
 
-    for (th in thresholds) {
-        mask_file <- rast(
-            file.path(
-                results_folder,
-                paste0(
-                    glue("taxonid={species[1]}/model={model_acro}/predictions/"),
-                    glue("taxonid={species[1]}_model={model_acro}_mask_cog.tif")
-                )
-            )
-        )
-        mask_file_depth <- mask_file$fit_region
-        mask_file_depth[mask_file_depth == 0] <- NA
-        mask_file <- mask_file$fit_ecoregions
-        mask_file <- terra::mask(mask_file, mask_file_depth)
-        mask_file[mask_file == 0] <- NA
+proc_list <- list_processed(preproc_folder, write_csv = FALSE)
 
-        joint_raster <- rast(
-            file.path(
-                results_folder,
-                paste0(
-                    glue("taxonid={species[1]}/model={model_acro}/predictions/"),
-                    glue("taxonid={species[1]}_model={model_acro}_method={m}_scen={sc}_cog.tif")
-                )
-            )
-        )
-        joint_raster <- terra::mask(joint_raster[[1]], mask_file)
-        joint_raster <- joint_raster / 100
+for (tg in seq_len(nrow(types_grid))) {
+    cli::cli_alert_info(cli::bg_cyan("Combination {tg} out of {nrow(types_grid)}"))
+    thresh <- types_grid$sel_threshold[tg]
+    mtype <- types_grid$type[tg]
 
-        th_val <- th_list[[1]][th_list[[1]]$model == m, th]
-        joint_raster[joint_raster < as.numeric(th_val)] <- 0
+    for (g in seq_len(length(groups))) {
+        cli::cli_alert_info(cli::bg_green("Group {g} out of {length(groups)}"))
 
-        joint_raster_bin <- joint_raster
-        joint_raster_bin[joint_raster_bin > 0] <- 1
+        sel_species <- biogenic_groups[[g]]
 
-        rm(mask_file, mask_file_depth)
+        av_species <- proc_list |>
+            filter(taxonid %in% sel_species) |>
+            filter(threshold == thresh) |>
+            filter(type == mtype)
 
-        for (sp in 2:length(species)) {
-            mask_file <- rast(
-                file.path(
-                    results_folder,
-                    paste0(
-                        glue("taxonid={species[sp]}/model={model_acro}/predictions/"),
-                        glue("taxonid={species[sp]}_model={model_acro}_mask_cog.tif")
-                    )
-                )
-            )
-            mask_file_depth <- mask_file$fit_region
-            mask_file_depth[mask_file_depth == 0] <- NA
-            mask_file <- mask_file$fit_ecoregions
-            mask_file <- terra::mask(mask_file, mask_file_depth)
-            mask_file[mask_file == 0] <- NA
+        if (length(unique(av_species$taxonid)) != length(sel_species)) stop("Problem with group ", groups[g])
 
-            species_raster <- rast(
-                file.path(
-                    results_folder,
-                    paste0(
-                        glue("taxonid={species[sp]}/model={model_acro}/predictions/"),
-                        glue("taxonid={species[sp]}_model={model_acro}_method={m}_scen={sc}_cog.tif")
-                    )
-                )
-            )
-            species_raster <- terra::mask(species_raster[[1]], mask_file)
-            species_raster <- species_raster / 100
-
-            th_val <- th_list[[sp]][th_list[[sp]]$model == m, th]
-            species_raster[species_raster < as.numeric(th_val)] <- 0
-
-            species_raster_bin <- species_raster
-            species_raster_bin[species_raster_bin > 0] <- 1
-
-            joint_raster <- sum(joint_raster, species_raster, na.rm = T)
-            joint_raster_bin <- sum(joint_raster_bin, species_raster_bin, na.rm = T)
-
-            rm(mask_file, mask_file_depth, species_raster, th_val)
-        }
-
-        results_list[[which(th == thresholds)]] <- list(
-            cont = joint_raster,
-            bin = joint_raster_bin
-        )
-    }
-
-    names(results_list) <- thresholds
-
-    return(results_list)
-}
-
-join_predictions <- function(species, model_acro, hab_name,
-                            results_folder = res_folder, out_folder = "habitat") {
-
-    fs::dir_create(out_folder)
-
-    all_preds <- list.files(file.path(results_folder,
-        paste0("taxonid=", species),
-        paste0("model=", model_acro), "predictions"))
-    
-    all_preds <- all_preds[grepl("method=", all_preds)]
-
-    methods <- sub(".*method=([^_]+(?:_[^_]+)*?)_scen=.*", "\\1", all_preds)
-    methods <- unique(methods)
-
-    # Check exists in all
-    m_ok <- lapply(methods, function(x){
-        sp_cont <- lapply(species, function(sp) {
-            f <- list.files(file.path(
-                results_folder, paste0("taxonid=", sp, "/model=", model_acro, "/predictions/")
-            ))
-            any(grepl(paste0("method=", x), f))
-        })
-        all(unlist(sp_cont))
-    })
-    methods <- methods[unlist(m_ok)]
-
-    scens <- sub(".*scen=([^_]+(?:_dec[0-9]+)?).*", "\\1", all_preds)
-    scens <- unique(scens)
-
-    cat(glue("Joining predictions for {length(species)} species"),
-        glue("in {length(methods)} methods and {length(scens)} scenarios.\n"))
-
-    for (m in methods) {
-        for (sc in scens) {
-            result <- join_pred_sp(results_folder, model_acro,
-                species, m, sc)
-
-            res_nams <- names(result)
-
-            for (r in 1:length(result)) {
-                outfile <- glue(
-                    "habitat={hab_name}_model={model_acro}_method={m}_scen={sc}_type=cont_threshold={res_nams[r]}.tif"
-                )
-                outfile <- file.path(out_folder, outfile)
-                trast <- result[[r]]$cont
-                trast <- trast * 100
-                trast <- as.int(trast)
-                names(trast) <- paste0("continuous_", res_nams[r])
-                writeRaster(trast, outfile, overwrite = T, datatype = "INT1U")
-                obissdm::cogeo_optim(outfile)
-
-                outfile <- glue(
-                    "habitat={hab_name}_model={model_acro}_method={m}_scen={sc}_type=bin_threshold={res_nams[r]}.tif"
-                )
-                outfile <- file.path(out_folder, outfile)
-                trast <- result[[r]]$bin
-                trast <- trast * 100
-                trast <- as.int(trast)
-                names(trast) <- paste0("binary_", res_nams[r])
-                writeRaster(trast, outfile, overwrite = T, datatype = "INT1U")
-                obissdm::cogeo_optim(outfile)
+        pb <- progress::progress_bar$new(total = nrow(scen_grid))
+        for (sc in seq_len(nrow(scen_grid))) {
+            pb$tick()
+            scen <- scen_grid$scenario[sc]
+            decade <- scen_grid$decade[sc]
+            if (!is.na(decade)) {
+                if (decade == 2050) {
+                    decade <- "dec50"
+                } else if (decade == 2100) {
+                    decade <- "dec100"
+                }
+            } else {
+                decade <- ""
             }
+            outgroup <- gsub("\\/", "-", tolower(groups[g]))
+            outfile <- glue::glue(
+                "_model={model_acro}_scen={scen}{ifelse(decade == '', '', paste0('_', decade))}_",
+                "th={thresh}_type={mtype}_"
+            )
+            if (scen == "current") {
+                scen_list <- av_species |>
+                    filter(scenario == scen)
+            } else {
+                scen_list <- av_species |>
+                    filter(scenario == scen) |>
+                    filter(period == decade)
+            }
+
+            if (nrow(scen_list) != length(unique(scen_list$taxonid))) stop("Potential problem with list. Check.")
+
+            if (interactive()) {
+                layers <- rast(file.path(preproc_folder, scen_list$file))
+            } else {
+                layers <- vrt(file.path(preproc_folder, scen_list$file), options = c("-separate"))
+            }
+
+            # Produce traditional layer
+            cont_richness <- sum(layers)
+            cont_richness <- cont_richness / 100
+
+            # Produce binary layer
+            bin_layers <- classify(layers, matrix(c(0, Inf, 1), nrow = 1))
+            bin_richness <- sum(bin_layers)
+
+            # Save rasters
+            base_f <- paste0("habitat=", outgroup, outfile)
+            tempf <- paste0(base_f, "what=continuous.tif")
+            save_raster(cont_richness, file.path(out_folder, tempf))
+            tempf <- paste0(base_f, "what=binary.tif")
+            save_raster(bin_richness, file.path(out_folder, tempf))
         }
     }
-    jsonlite::write_json(
-        list(habitat = hab_name,
-            species = species,
-            model_acro = model_acro,
-            date = Sys.Date(),
-            methods_used = methods,
-            scenarios_used = scens),
-        path = file.path(out_folder, paste0("habitat=", hab_name, "_model=", model_acro, "_what=log.json")),
-        pretty = T
-    )
-    cat("Concluded. \n")
-    return(invisible(NULL))
-}
-
-for (k in 1:length(biogenic_groups)) {
-    tg_biog <- names(biogenic_groups)[k]
-    cat("Processing", tg_biog, "\n")
-
-    join_predictions(biogenic_groups[[k]], model_acro = acro, hab_name = tg_biog)
 }
