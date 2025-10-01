@@ -532,7 +532,7 @@ for (hab in habitat_types) {
         th <- gsub("_type*.*", "", gsub(".*._th=", "", asset_type))
         type <- gsub("_what*.*", "", gsub(".*._type=", "", asset_type))
         scen <- gsub("_th*.*", "", gsub("scen=", "", asset_type))
-        what <- gsub("cog*.*", "", )
+        what <- gsub("*.*what=", "", asset_type)
 
         scenario_name <- toupper(gsub("dec100", "2100", gsub("dec50", "2050", gsub("_", " ", scen))))
         scenario_name <- dplyr::case_when(
