@@ -71,6 +71,13 @@ groups <- names(biogenic_groups)
 
 proc_list <- list_processed(preproc_folder, write_csv = FALSE)
 
+save_raster <- \(r, file, as_cog = TRUE) {
+  r <- as.int(r)
+  writeRaster(r, file, datatype = "INT2U", overwrite = TRUE)
+  obissdm::cogeo_optim(file)
+  return(invisible(NULL))
+}
+
 for (tg in seq_len(nrow(types_grid))) {
     cli::cli_alert_info(cli::bg_cyan("Combination {tg} out of {nrow(types_grid)}"))
     thresh <- types_grid$sel_threshold[tg]
