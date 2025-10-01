@@ -528,7 +528,7 @@ for (hab in habitat_types) {
 
         file_sub_path <- file.path(s3_path, glue("habitat/model={project_id}"), id)
 
-        habitat <- hab
+        habitat <- gsub("_", " ", hab)
         th <- gsub("_type*.*", "", gsub(".*._th=", "", asset_type))
         type <- gsub("_what*.*", "", gsub(".*._type=", "", asset_type))
         scen <- gsub("_th*.*", "", gsub("scen=", "", asset_type))
@@ -544,7 +544,7 @@ for (hab in habitat_types) {
             .default = scenario_name
         )
 
-        asset_title <- glue("{stringr::str_to_title(gsub('_', '', habitat))} - ",
+        asset_title <- glue("{stringr::str_to_title(habitat)} - ",
                             "{scenario_name} - {toupper(th)} - {ifelse(type == 'const', 'Constrained', 'Standard')} - ",
                             "{stringr::str_to_title(what)}")
 
