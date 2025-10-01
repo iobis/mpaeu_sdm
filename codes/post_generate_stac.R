@@ -127,7 +127,9 @@ for (sp in taxons) {
             method == "maxent" ~ "Maxent",
             method == "xgboost" ~ "XGBoost",
             method == "rf_classification_ds" ~ "Random Forest - Down-sampled classification",
-            method == "ensemble" ~ "Ensemble of models"
+            method == "esm" ~ "Ensemble of Small Models (ESM)",
+            method == "ensemble" ~ "Ensemble of models",
+            .default = method
         )
         if (grepl("what=bootcv", pred)) {
             scenario <- gsub("scen=", "", sub(".*?(scen=.*?)_what.*", "\\1", pred))
@@ -174,7 +176,9 @@ for (sp in taxons) {
                     method == "maxent" ~ "Maxent",
                     method == "xgboost" ~ "XGBoost",
                     method == "rf_classification_ds" ~ "Random Forest - Down-sampled classification",
-                    method == "ensemble" ~ "Ensemble of models"
+                    method == "esm" ~ "Ensemble of Small Models (ESM)",
+                    method == "ensemble" ~ "Ensemble of models",
+                    .default = method
                 )
             } else {
                 method <- NULL
