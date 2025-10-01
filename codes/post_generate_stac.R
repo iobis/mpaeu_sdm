@@ -417,21 +417,27 @@ for (div in diversity_types) {
 
         file_sub_path <- file.path(s3_path, glue("diversity/model={project_id}"), id)
 
-        group <- gsub("_what=*.*", "", gsub(".*._group=", "", asset_type))
-        th <- gsub("_type*.*", "", gsub(".*._th=", "", asset_type))
-        type <- gsub("_group*.*", "", gsub(".*._type=", "", asset_type))
-        scen <- gsub("_th*.*", "", gsub("scen=", "", asset_type))
-        scenario_name <- toupper(gsub("dec100", "2100", gsub("dec50", "2050", gsub("_", " ", scen))))
-        scenario_name <- dplyr::case_when(
-            grepl(126, scenario_name) ~ gsub("ssp126", "SSP1 (2.6)", scenario_name),
-            grepl(245, scenario_name) ~ gsub("ssp245", "SSP2 (4.5)", scenario_name),
-            grepl(370, scenario_name) ~ gsub("ssp370", "SSP3 (7.0)", scenario_name),
-            grepl(460, scenario_name) ~ gsub("ssp460", "SSP4 (6.0)", scenario_name),
-            grepl(585, scenario_name) ~ gsub("ssp585", "SSP5 (8.5)", scenario_name),
-            .default = scenario_name
-        )
-        asset_title <- glue("{scenario_name} - {toupper(th)} - {ifelse(type == 'const', 'Constrained', 'Standard')} - ",
-                            "{stringr::str_to_title(group)}")
+        if (grepl("raw", asset_type)) {
+            group <- gsub("_what=*.*", "", gsub("group=", "", asset_type))
+            asset_title <- stringr::str_to_title(group)
+        } else {
+            group <- gsub("_what=*.*", "", gsub(".*._group=", "", asset_type))
+            th <- gsub("_type*.*", "", gsub(".*._th=", "", asset_type))
+            type <- gsub("_group*.*", "", gsub(".*._type=", "", asset_type))
+            scen <- gsub("_th*.*", "", gsub("scen=", "", asset_type))
+            scenario_name <- toupper(gsub("dec100", "2100", gsub("dec50", "2050", gsub("_", " ", scen))))
+            scenario_name <- dplyr::case_when(
+                grepl(126, scenario_name) ~ gsub("ssp126", "SSP1 (2.6)", scenario_name),
+                grepl(245, scenario_name) ~ gsub("ssp245", "SSP2 (4.5)", scenario_name),
+                grepl(370, scenario_name) ~ gsub("ssp370", "SSP3 (7.0)", scenario_name),
+                grepl(460, scenario_name) ~ gsub("ssp460", "SSP4 (6.0)", scenario_name),
+                grepl(585, scenario_name) ~ gsub("ssp585", "SSP5 (8.5)", scenario_name),
+                .default = scenario_name
+            )
+            asset_title <- glue("{scenario_name} - {toupper(th)} - {ifelse(type == 'const', 'Constrained', 'Standard')} - ",
+                                "{stringr::str_to_title(group)}")
+        }
+
         if (grepl("what=", asset_type)) {
             what <- gsub("_cog*.*", "", gsub(".*._what=", "", asset_type))
             asset_title <- paste(asset_title, "-", what)
@@ -526,7 +532,7 @@ for (hab in habitat_types) {
         th <- gsub("_type*.*", "", gsub(".*._th=", "", asset_type))
         type <- gsub("_what*.*", "", gsub(".*._type=", "", asset_type))
         scen <- gsub("_th*.*", "", gsub("scen=", "", asset_type))
-        what <- gsub("cog*.*", "", gsub(".*._what=", "", asset_type))
+        what <- gsub("cog*.*", "", )
 
         scenario_name <- toupper(gsub("dec100", "2100", gsub("dec50", "2050", gsub("_", " ", scen))))
         scenario_name <- dplyr::case_when(
@@ -538,7 +544,7 @@ for (hab in habitat_types) {
             .default = scenario_name
         )
 
-        asset_title <- glue("{stringr::str_to_title(habitat)} - ",
+        asset_title <- glue("{stringr::str_to_title(gsub('_', '', habitat))} - ",
                             "{scenario_name} - {toupper(th)} - {ifelse(type == 'const', 'Constrained', 'Standard')} - ",
                             "{stringr::str_to_title(what)}")
 
