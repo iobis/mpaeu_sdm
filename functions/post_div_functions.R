@@ -90,7 +90,7 @@ proc_layers <- function(sp, results_folder, out_folder, global_mask, base_file =
 
     # Load mask
     masks <- rast(glue(
-        "{results_folder}/taxonid={sp}/model={model_acro}/predictions/taxonid={sp}_model={model_acro}_mask_cog.tif"
+        "{results_folder}/taxonid={sp}/model={model_acro}/predictions/taxonid={sp}_model={model_acro}_what=mask_cog.tif"
     ))
     masks <- subset(masks, ifelse(type == "std", "fit_region", "fit_region_max_depth"))
     NAflag(masks) <- 0
@@ -858,7 +858,7 @@ proc_maps_py <- function(index, batches, model, threshold_table, outfolder, grou
   mask_paths <- file.path(
     results_folder,
     glue::glue(
-      "taxonid={ids}/model=mpaeu/predictions/taxonid={ids}_model=mpaeu_mask_cog.tif"
+      "taxonid={ids}/model=mpaeu/predictions/taxonid={ids}_model=mpaeu_what=mask_cog.tif"
     )
   )
   
@@ -992,7 +992,7 @@ proc_maps <- function(
   mask_paths <- file.path(
     results_folder,
     glue::glue(
-      "taxonid={ids}/model=mpaeu/predictions/taxonid={ids}_model=mpaeu_mask_cog.tif"
+      "taxonid={ids}/model=mpaeu/predictions/taxonid={ids}_model=mpaeu_what=mask_cog.tif"
     )
   )
 
