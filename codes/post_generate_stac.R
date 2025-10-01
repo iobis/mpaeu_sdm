@@ -9,9 +9,9 @@ dt <- import("datetime")
 project_id <- "mpaeu"
 taxons <- extract_storr()
 s3_path <- "s3://obis-maps/sdm"
-sp_results_folder <- "results"
-div_results_folder <- "diversity"
-hab_results_folder <- "habitat"
+sp_results_folder <- "/data/scps/v5/results"
+div_results_folder <- "/data/scps/v5/diversity"
+hab_results_folder <- "/data/scps/v5/habitat"
 catalog_output <- "stac"
 
 # Root of the catalogue --------
@@ -226,7 +226,9 @@ for (sp in taxons) {
             method == "maxent" ~ "Maxent",
             method == "xgboost" ~ "XGBoost",
             method == "rf_classification_ds" ~ "Random Forest - Down-sampled classification",
-            method == "ensemble" ~ "Ensemble of models"
+            method == "esm" ~ "Ensemble of Small Models (ESM)",
+            method == "ensemble" ~ "Ensemble of models",
+            .default = method
         )
 
         item_what <- gsub("\\.rds", "", gsub(glue("taxonid={sp}_model={project_id}_"), "", mod))
@@ -307,13 +309,200 @@ for (sp in taxons) {
         )
     }
 
-    species_collection$add_item(item)
+    i <- species_collection$add_item(item)
 }
 
 #species_collection$describe()
 #root_catalog$describe()
 
+# Project catalogue for diversity -----
+diversity_project_catalog <- pystac$Catalog(
+    id = glue("diversity-{project_id}"),
+    description = glue("Diversity metrics based on SDM results for model={project_id}")
+)
+theme_catalogs[["diversity"]]$add_child(diversity_project_catalog)
+
+theme_catalogs$diversity$describe()
+
+diversity_collection <- pystac$Collection(
+    id = glue("diversity-{project_id}-collection"),
+    description = glue("Diversity metrics based on SDM results for model={project_id}"),
+    extent = pystac$Extent(
+        spatial = pystac$SpatialExtent(c(-180, -90, 180, 90)),
+        temporal = pystac$TemporalExtent(list(
+            dt$datetime(2025L, 1L, 1L, tzinfo = dt$timezone$utc),
+            dt$datetime(2100L, 1L, 1L, tzinfo = dt$timezone$utc)
+        ))
+        # c(as.Date("2025-01-01"), as.Date("2100-01-01")))
+    ),
+    license = "CC-BY-4.0"
+)
+diversity_project_catalog$add_child(diversity_collection)
+diversity_project_catalog$describe()
+
+diversity_files <- list.files(div_results_folder)
+diversity_types <- diversity_files[diversity_files != "preproc"]
+diversity_types <- gsub("metric=", "",
+                        gsub("_model*.*", "", diversity_types)) |>
+    unique()
+
+for (div in diversity_types) {
+
+    metric_explanation <- dplyr::case_when(
+        div == "lcbd" ~ "Local Contribution to Beta Diversity",
+        div == "richness" ~ "Richness, as the sum of the (thresholded) SDMs",
+        .default = div
+    )
+
+    item <- pystac$Item(
+        id = glue("metric={div}"),
+        geometry = NULL,
+        bbox = c(-180, -90, 180, 90),
+        datetime = dt$datetime(2025L, 1L, 1L, tzinfo = dt$timezone$utc),
+        properties = list(
+            metric = div,
+            model = project_id,
+            metric_explanation = metric_explanation
+        )
+    )
+
+    id_div <- diversity_files[grepl(div, diversity_files)]
+
+    for (id in id_div) {
+        asset_type <- gsub(
+            glue("metric={div}_model={project_id}_"),
+            "", id
+        ) |>
+        (\(x) gsub("_cog\\.tif", "", x))() 
+
+        file_sub_path <- file.path(s3_path, glue("diversity/model={project_id}"), id)
+
+        group <- gsub("_what=*.*", "", gsub(".*._group=", "", asset_type))
+        th <- gsub("_type*.*", "", gsub(".*._th=", "", asset_type))
+        type <- gsub("_group*.*", "", gsub(".*._type=", "", asset_type))
+        scen <- gsub("_th*.*", "", gsub("scen=", "", asset_type))
+        if (grepl("what=", asset_type)) {
+            what <- gsub("_cog*.*", "", gsub(".*._what=", "", asset_type))
+        } else {
+            what <- ""
+        }
+
+        item$add_asset(
+            asset_type,
+            pystac$Asset(
+                href = file_sub_path,
+                media_type = pystac$MediaType$COG,
+                title = glue("metric={div}_{asset_type}"),
+                extra_fields = list(
+                    group = group,
+                    threshold = th,
+                    type = type,
+                    scenario = scen,
+                    what = what
+                ),
+                roles = list("data")
+            )
+        )
+    }
+
+    i <- diversity_collection$add_item(item)
+}
+
+
+# Project catalogue for habitat -----
+habitat_project_catalog <- pystac$Catalog(
+    id = glue("habitat-{project_id}"),
+    description = glue("Habitat based on stacked SDM results for model={project_id}")
+)
+theme_catalogs[["habitat"]]$add_child(habitat_project_catalog)
+
+theme_catalogs$habitat$describe()
+
+habitat_collection <- pystac$Collection(
+    id = glue("habitat-{project_id}-collection"),
+    description = glue("Habitat based on stacked SDM results for model={project_id}"),
+    extent = pystac$Extent(
+        spatial = pystac$SpatialExtent(c(-180, -90, 180, 90)),
+        temporal = pystac$TemporalExtent(list(
+            dt$datetime(2025L, 1L, 1L, tzinfo = dt$timezone$utc),
+            dt$datetime(2100L, 1L, 1L, tzinfo = dt$timezone$utc)
+        ))
+        # c(as.Date("2025-01-01"), as.Date("2100-01-01")))
+    ),
+    license = "CC-BY-4.0"
+)
+habitat_project_catalog$add_child(habitat_collection)
+habitat_project_catalog$describe()
+
+habitat_files <- list.files(hab_results_folder)
+habitat_types <- habitat_files[habitat_files != "preproc"]
+habitat_types <- gsub("habitat=", "",
+                      gsub("_model*.*", "", habitat_types)) |>
+    unique()
+
+for (hab in habitat_types) {
+
+    hab_group <- stringr::str_to_sentence(gsub("_", " ", hab))
+
+    item <- pystac$Item(
+        id = glue("habitat={hab}"),
+        geometry = NULL,
+        bbox = c(-180, -90, 180, 90),
+        datetime = dt$datetime(2025L, 1L, 1L, tzinfo = dt$timezone$utc),
+        properties = list(
+            habitat = hab_group,
+            model = project_id
+        )
+    )
+
+    id_hab <- habitat_files[grepl(hab, habitat_files)]
+
+    for (id in id_hab) {
+        asset_type <- gsub(
+            glue::glue("habitat={hab}_model={project_id}_"),
+            "", id
+        ) |>
+        (\(x) gsub("_cog\\.tif", "", x))() 
+
+        file_sub_path <- file.path(s3_path, glue("habitat/model={project_id}"), id)
+
+        habitat <- hab
+        th <- gsub("_type*.*", "", gsub(".*._th=", "", asset_type))
+        type <- gsub("_what*.*", "", gsub(".*._type=", "", asset_type))
+        scen <- gsub("_th*.*", "", gsub("scen=", "", asset_type))
+        what <- gsub("cog*.*", "", gsub(".*._what=", "", asset_type))
+
+        item$add_asset(
+            asset_type,
+            pystac$Asset(
+                href = file_sub_path,
+                media_type = pystac$MediaType$COG,
+                title = glue::glue("habitat={hab}_{asset_type}"),
+                extra_fields = list(
+                    habitat = habitat,
+                    threshold = th,
+                    type = type,
+                    scenario = scen,
+                    what = what
+                ),
+                roles = list("data")
+            )
+        )
+    }
+
+    i <- habitat_collection$add_item(item)
+}
+
+
+
 root_catalog$normalize_and_save(
     root_href = catalog_output,
     catalog_type = pystac$CatalogType$SELF_CONTAINED
 )
+
+
+# Optional: upload to S3
+com <- glue::glue(
+    'aws s3 sync {catalog_output} {file.path(s3_path, catalog_output)}'
+)
+system(com)
