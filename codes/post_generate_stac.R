@@ -165,7 +165,7 @@ for (sp in taxons) {
                     scenario = scenario,
                     scenario_text = scenario_name,
                     method = method,
-                    type = pred_type_name
+                    class = pred_type_name
                 ),
                 media_type = pystac$MediaType$COG,
                 roles = list("data")
@@ -447,7 +447,7 @@ for (div in diversity_types) {
                 extra_fields = list(
                     group = group,
                     threshold = th,
-                    type = type,
+                    post_treatment = type,
                     scenario = scen,
                     scenario_text = scenario_name,
                     what = what
@@ -550,7 +550,7 @@ for (hab in habitat_types) {
                 extra_fields = list(
                     habitat = habitat,
                     threshold = th,
-                    type = type,
+                    post_treatment = type,
                     scenario = scen,
                     scenario_text = scenario_name,
                     what = what
