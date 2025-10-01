@@ -412,6 +412,9 @@ for (div in diversity_types) {
     i <- diversity_collection$add_item(item)
 }
 
+#diversity_collection$describe()
+#root_catalog$describe()
+
 
 # Project catalogue for habitat -----
 habitat_project_catalog <- pystac$Catalog(
@@ -497,6 +500,8 @@ for (hab in habitat_types) {
     i <- habitat_collection$add_item(item)
 }
 
+#habitat_collection$describe()
+#root_catalog$describe()
 
 
 root_catalog$normalize_and_save(
