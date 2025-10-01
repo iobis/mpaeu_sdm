@@ -136,6 +136,15 @@ for (sp in taxons) {
         } else {
             scenario <- gsub("scen=", "", sub(".*?(scen=.*?)_cog.*", "\\1", pred))
         }
+        scenario_name <- toupper(gsub("dec100", "2100", gsub("dec50", "2050", gsub("_", " ", scenario))))
+        scenario_name <- dplyr::case_when(
+            grepl(126, scenario_name) ~ gsub("ssp126", "SSP1 (2.6)", scenario_name),
+            grepl(245, scenario_name) ~ gsub("ssp245", "SSP2 (4.5)", scenario_name),
+            grepl(370, scenario_name) ~ gsub("ssp370", "SSP3 (7.0)", scenario_name),
+            grepl(460, scenario_name) ~ gsub("ssp460", "SSP4 (6.0)", scenario_name),
+            grepl(585, scenario_name) ~ gsub("ssp585", "SSP5 (8.5)", scenario_name),
+            .default = scenario_name
+        )
 
         pred_type <- gsub(glue("taxonid={sp}_model={project_id}_"), "", pred)
         if (grepl("bootcv", pred_type)) {
@@ -143,6 +152,7 @@ for (sp in taxons) {
         } else {
             pred_type <- gsub("_cog.tif", "_what=prediction", pred_type)
         }
+        pred_type_name <- ifelse(grepl("uncertainty", pred_type), "uncertainty", "prediction")
 
         file_path <- file.path(s3_path, glue("species/taxonid={sp}/model={project_id}/predictions/{pred}"))
 
@@ -150,6 +160,13 @@ for (sp in taxons) {
             pred_type,
             pystac$Asset(
                 href = file_path,
+                title = glue("{method_name} - {scenario_name} - {pred_type_name}"),
+                extra_fields = list(
+                    scenario = scenario,
+                    scenario_text = scenario_name,
+                    method = method,
+                    type = pred_type_name
+                ),
                 media_type = pystac$MediaType$COG,
                 roles = list("data")
             )
@@ -202,13 +219,24 @@ for (sp in taxons) {
             paste0("\\.", tools::file_ext(met)), "",
             gsub(glue("taxonid={sp}_model={project_id}_"), "", met)
         )
+        item_title <- dplyr::case_when(
+            item_what_short == "cvmetrics" ~ "Cross-validation metrics",
+            item_what_short == "fullmetrics" ~ "Metrics on the full data",
+            item_what_short == "respcurves" ~ "Partial response curves",
+            item_what_short == "varimportance" ~ "Variables importance",
+            item_what_short == "biasmetrics" ~ "Data bias metrics",
+            item_what_short == "posteval_hyperniche" ~ "Post-evaluation: hyperniche",
+            item_what_short == "posteval_niche" ~ "Post-evaluation: niche overlap",
+            item_what_short == "thresholds" ~ "Model thresholds",
+            .default = item_what_short
+        )
 
         file_path <- file.path(s3_path, glue("species/taxonid={sp}/model={project_id}/metrics/{met}"))
         item$add_asset(
             item_what,
             pystac$Asset(
                 href = file_path,
-                title = item_what_short,
+                title = item_title,
                 description = item_explanation,
                 media_type = met_type,
                 roles = list("data")
@@ -243,7 +271,7 @@ for (sp in taxons) {
             item_what,
             pystac$Asset(
                 href = file_path,
-                title = method_name,
+                title = paste("Model file:", method_name),
                 description = item_explanation,
                 media_type = mod_type,
                 roles = list("data")
@@ -281,6 +309,14 @@ for (sp in taxons) {
             grepl("what=shape", other) ~ "SHAPE uncertainty metric",
             grepl("what=thermenvelope", other) ~ "Thermal envelope (each band is a time period)"
         )
+        asset_title <- dplyr::case_when(
+            grepl("what=fitocc", other) ~ "Fit points",
+            grepl("what=log", other) ~ "Model details",
+            grepl("what=mask", other) ~ "Mask",
+            grepl("what=mess", other) ~ "MESS",
+            grepl("what=shape", other) ~ "SHAPE",
+            grepl("what=thermenvelope", other) ~ "Thermal envelope"
+        )
 
         asset_file_type <- dplyr::case_when(
             grepl("what=fitocc", other) ~ "application/vnd.apache.parquet",
@@ -305,9 +341,9 @@ for (sp in taxons) {
             asset_type,
             pystac$Asset(
                 href = file_sub_path,
-                media_type = asset_file_type,
-                title = gsub("what=", "", asset_type),
+                title = asset_title,
                 description = asset_explanation,
+                media_type = asset_file_type,
                 roles = list("data")
             )
         )
@@ -385,8 +421,20 @@ for (div in diversity_types) {
         th <- gsub("_type*.*", "", gsub(".*._th=", "", asset_type))
         type <- gsub("_group*.*", "", gsub(".*._type=", "", asset_type))
         scen <- gsub("_th*.*", "", gsub("scen=", "", asset_type))
+        scenario_name <- toupper(gsub("dec100", "2100", gsub("dec50", "2050", gsub("_", " ", scen))))
+        scenario_name <- dplyr::case_when(
+            grepl(126, scenario_name) ~ gsub("ssp126", "SSP1 (2.6)", scenario_name),
+            grepl(245, scenario_name) ~ gsub("ssp245", "SSP2 (4.5)", scenario_name),
+            grepl(370, scenario_name) ~ gsub("ssp370", "SSP3 (7.0)", scenario_name),
+            grepl(460, scenario_name) ~ gsub("ssp460", "SSP4 (6.0)", scenario_name),
+            grepl(585, scenario_name) ~ gsub("ssp585", "SSP5 (8.5)", scenario_name),
+            .default = scenario_name
+        )
+        asset_title <- glue("{scenario_name} - {toupper(th)} - {ifelse(type == 'const', 'Constrained', 'Standard')} - ",
+                            "{stringr::str_to_title(group)}")
         if (grepl("what=", asset_type)) {
             what <- gsub("_cog*.*", "", gsub(".*._what=", "", asset_type))
+            asset_title <- paste(asset_title, "-", what)
         } else {
             what <- ""
         }
@@ -395,15 +443,16 @@ for (div in diversity_types) {
             asset_type,
             pystac$Asset(
                 href = file_sub_path,
-                media_type = pystac$MediaType$COG,
-                title = glue("metric={div}_{asset_type}"),
+                title = asset_title,
                 extra_fields = list(
                     group = group,
                     threshold = th,
                     type = type,
                     scenario = scen,
+                    scenario_text = scenario_name,
                     what = what
                 ),
+                media_type = pystac$MediaType$COG,
                 roles = list("data")
             )
         )
@@ -479,19 +528,34 @@ for (hab in habitat_types) {
         scen <- gsub("_th*.*", "", gsub("scen=", "", asset_type))
         what <- gsub("cog*.*", "", gsub(".*._what=", "", asset_type))
 
+        scenario_name <- toupper(gsub("dec100", "2100", gsub("dec50", "2050", gsub("_", " ", scen))))
+        scenario_name <- dplyr::case_when(
+            grepl(126, scenario_name) ~ gsub("ssp126", "SSP1 (2.6)", scenario_name),
+            grepl(245, scenario_name) ~ gsub("ssp245", "SSP2 (4.5)", scenario_name),
+            grepl(370, scenario_name) ~ gsub("ssp370", "SSP3 (7.0)", scenario_name),
+            grepl(460, scenario_name) ~ gsub("ssp460", "SSP4 (6.0)", scenario_name),
+            grepl(585, scenario_name) ~ gsub("ssp585", "SSP5 (8.5)", scenario_name),
+            .default = scenario_name
+        )
+
+        asset_title <- glue("{stringr::str_to_title(habitat)} - ",
+                            "{scenario_name} - {toupper(th)} - {ifelse(type == 'const', 'Constrained', 'Standard')} - ",
+                            "{stringr::str_to_title(what)}")
+
         item$add_asset(
             asset_type,
             pystac$Asset(
                 href = file_sub_path,
-                media_type = pystac$MediaType$COG,
-                title = glue::glue("habitat={hab}_{asset_type}"),
+                title = asset_title,
                 extra_fields = list(
                     habitat = habitat,
                     threshold = th,
                     type = type,
                     scenario = scen,
+                    scenario_text = scenario_name,
                     what = what
                 ),
+                media_type = pystac$MediaType$COG,
                 roles = list("data")
             )
         )
