@@ -14,12 +14,38 @@ library(furrr)
 source("functions/components_model_species.R")
 
 # Settings ----
-model_acro <- "inteval"
+model_acro <- "mpaeu"
+output_format <- "multiband"# either "parquet" or "multiband"
 
 # Prepare adapted function to get thermal envelope
 # This function is based on the `get_thermal_envelope` of the package `speedy`
 # but use the data we used for SDMs instead
 # https://github.com/iobis/rspeedy
+
+# This function to overcome error in findInterval
+alt_kde <- function(p, fhat) {
+  if (any(p > 1) | any(p < 0)) 
+    stop("p must be <= 1 and >= 0")
+  cumul.prob <- ks::pkde(q = fhat$eval.points, fhat = fhat)
+  ind <- findInterval(x = p, vec = round(cumul.prob, 10))
+  quant <- rep(0, length(ind))
+  for (j in 1:length(ind)) {
+    i <- ind[j]
+    if (i == 0) 
+      quant[j] <- fhat$eval.points[1]
+    else if (i >= length(fhat$eval.points)) 
+      quant[j] <- fhat$eval.points[length(fhat$eval.points)]
+    else {
+      quant1 <- fhat$eval.points[i]
+      quant2 <- fhat$eval.points[i + 1]
+      prob1 <- cumul.prob[i]
+      prob2 <- cumul.prob[i + 1]
+      alpha <- (p[j] - prob2)/(prob1 - prob2)
+      quant[j] <- quant1 * alpha + quant2 * (1 - alpha)
+    }
+  }
+  return(quant)
+}
 
 get_envelope <- function (sp_pts, env) {
  
@@ -46,13 +72,17 @@ get_envelope <- function (sp_pts, env) {
   
   temperatures <- terra::extract(env, points)
   temperatures <- temperatures[,2]
+  temperatures <- temperatures[!is.na(temperatures)]
   
   if (length(temperatures) < min_temperatures) {
     return(NULL)
   }
   
   kd <- ks::kde(temperatures, h = kde_bandwidth)
-  percentiles <- ks::qkde(c(0.01, 0.99), kd)
+  percentiles <- try(ks::qkde(c(0.01, 0.99), kd), silent = T)
+  if (inherits(percentiles, "try-error")) {
+    percentiles <- alt_kde(c(0.01, 0.99), kd)
+  }
   
   return(percentiles)
 }
@@ -67,25 +97,34 @@ get_masked <- function(percentiles, layer) {
 }
 
 # Create a function to generate the thermal range maps
-get_thermrange <- function(species, skip_done = TRUE) {
+get_thermrange <- function(species, target_folder, skip_done = TRUE) {
   
   # Load species data
-  sp_data <- open_dataset("data/species/")
   sp_code <- species
+  sp_data <- read_parquet(paste0("data/species/key=", sp_code, ".parquet"))
   
   sp_sel_data <- sp_data %>%
-    filter(taxonID == sp_code) %>%
+    select(decimalLongitude, decimalLatitude, data_type, taxonID) %>%
+    filter(data_type == "fit_points") %>%
     collect()
   
-  outfile <- paste0("results/taxonid=", species, "/model=", model_acro,
+  if (output_format == "multiband") {
+    outfile <- paste0(target_folder, "/taxonid=", species, "/model=", model_acro,
+                    "/predictions/taxonid=", species, "_model=",
+                    model_acro, "_what=thermenvelope.tif")
+  } else if (output_format == "parquet") {
+    outfile <- paste0(target_folder, "/taxonid=", species, "/model=", model_acro,
                     "/predictions/taxonid=", species, "_model=",
                     model_acro, "_what=thermenvelope.parquet")
+  } else {
+    cli::cli_abort("`output_format` not recognized.")
+  }
   
   if (file.exists(outfile) & skip_done) {
     return("already_saved")
   }
   
-  if (nrow(sp_sel_data) > 15) {
+  if (nrow(sp_sel_data) >= 15) {
     
     # Load ecological information
     eco_info <- arrow::open_csv_dataset("data/species_ecoinfo.csv") %>%
@@ -123,7 +162,7 @@ get_thermrange <- function(species, skip_done = TRUE) {
     masked_data <- list()
     limits <- list()
     
-    for (i in 1:nrow(scenarios)) {
+    for (i in seq_len(nrow(scenarios))) {
       
       cli::cat_line(cli::col_cyan(paste("Processing scenario", i, "out of", nrow(scenarios))))
       
@@ -157,26 +196,39 @@ get_thermrange <- function(species, skip_done = TRUE) {
     masked_data <- as.int(masked_data)
     
     names(masked_data) <- gsub("_NA", "", paste0(scenarios$scenario, "_", scenarios$year))
-    masked_data_pol <- lapply(1:nlyr(masked_data), function(x) aggregate(as.polygons(masked_data[[x]], values = F)))
-    names(masked_data_pol) <- names(masked_data)
-    masked_data_pol <- vect(masked_data_pol)
     
-    areas <- lapply(1:length(masked_data_pol), function(x){
-      sel_pol <- masked_data_pol[x]
-      ex <- terra::expanse(sel_pol, unit = "km")
-      data.frame(area = ex)
-    })
+    if (output_format == "multiband") {
+      areas <- lapply(seq_len(nlyr(masked_data_pol)), function(x){
+        sel_pol <- masked_data[[x]]
+        ex <- terra::expanse(sel_pol, unit = "km")
+        data.frame(area = ex)
+      })
+
+      writeRaster(masked_data, outfile, datatype = "INT1U")
+      obissdm::cogeo_optim(outfile)
+    } else if (output_format == "parquet") {
+      masked_data_pol <- lapply(seq_len(nlyr(masked_data)), function(x) aggregate(as.polygons(masked_data[[x]], values = F)))
+      names(masked_data_pol) <- names(masked_data)
+      masked_data_pol <- vect(masked_data_pol)
+      
+      areas <- lapply(seq_len(length(masked_data_pol)), function(x){
+        sel_pol <- masked_data_pol[x]
+        ex <- terra::expanse(sel_pol, unit = "km")
+        data.frame(area = ex)
+      })
+
+      masked_data_pol <- terra::simplifyGeom(masked_data_pol)
+    
+      masked_data_pol_sf <- sf::st_as_sf(masked_data_pol)
+      
+      sfarrow::st_write_parquet(masked_data_pol_sf, outfile)
+    }
+
     areas <- do.call("rbind", areas)
     areas$scenario <- scenarios$scenario
     areas$year <- scenarios$year
     
-    masked_data_pol <- terra::simplifyGeom(masked_data_pol)
-    
-    masked_data_pol_sf <- sf::st_as_sf(masked_data_pol)
-    
-    sfarrow::st_write_parquet(masked_data_pol_sf, outfile)
-    
-    outfile_json <- gsub("thermenvelope.parquet", "thermmetrics.json", outfile)
+    outfile_json <- gsub("thermenvelope.parquet|thermenvelop.tif", "thermmetrics.json", outfile)
     outfile_json <- gsub("predictions", "metrics", outfile_json)
     
     jsonlite::write_json(list(
@@ -197,21 +249,13 @@ get_thermrange <- function(species, skip_done = TRUE) {
 
 # Fit thermal envelopes for all species ----
 
-# Temporary:
-tg_species <- c(
-  "100803", "100961", "101174", "105883", "107253", "107380", "107392", "107409", "107442", "107455",
-  "107518", "111723", "125349", "125366", "126459", "126830", "126868", "127049", "127214", "127380",
-  "127393", "130490", "132371", "135146", "135178", "135180", "136290", "137080", "139454", "1398844",
-  "140770", "140780", "141436", "141774", "1420120", "145297", "145306", "145307", "145309", "145310",
-  "145511", "145540", "145541", "145544", "145548", "145551", "145716", "145723", "145725", "145728",
-  "145734", "145794", "145795", "1465385", "146733", "207507", "207516", "210726", "234483", "238025",
-  "283704", "286731", "288889", "289939", "371985", "372019", "372502", "383014", "494791", "495082",
-  "495309"
-)
+results_folder <- "/data/scps/v3/results"
+tg_species <- list.files(results_folder)
+tg_species <- gsub("taxonid=", "", tg_species)
 
 # Run in parallel
-plan(multisession, workers = 4)
+plan(multisession, workers = 40)
 
-results <- future_map(as.numeric(tg_species), function(sp) try(get_thermrange(sp)), .progress = T)
+results <- future_map(as.numeric(tg_species), function(sp) try(get_thermrange(sp, target_folder = results_folder)), .progress = T)
 
 print(results[1:4])
