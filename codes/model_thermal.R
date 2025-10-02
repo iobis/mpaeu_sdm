@@ -256,8 +256,13 @@ tg_species <- gsub("taxonid=", "", tg_species)
 tg_species <- as.integer(tg_species)
 
 # Run in parallel
-plan(multisession, workers = 40)
+parallel_workers <- 40
+plan(multisession, workers = parallel_workers)
+mem_frac <- 0.9 / parallel_workers
 
-results <- future_map(tg_species, function(sp) try(get_thermrange(sp, target_folder = results_folder)), .progress = T)
+results <- future_map(tg_species, function(sp) {
+  terra::terraOptions(memfrac = mem_frac)
+  try(get_thermrange(sp, target_folder = results_folder))
+}, .progress = T)
 
 print(results[1:4])
