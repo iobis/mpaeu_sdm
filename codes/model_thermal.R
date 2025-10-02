@@ -198,9 +198,10 @@ get_thermrange <- function(species, target_folder, skip_done = TRUE) {
     names(masked_data) <- gsub("_NA", "", paste0(scenarios$scenario, "_", scenarios$year))
     
     if (output_format == "multiband") {
-      areas <- lapply(seq_len(nlyr(masked_data_pol)), function(x){
+      areas <- lapply(seq_len(nlyr(masked_data)), function(x){
         sel_pol <- masked_data[[x]]
         ex <- terra::expanse(sel_pol, unit = "km")
+        ex <- ex$area
         data.frame(area = ex)
       })
 
