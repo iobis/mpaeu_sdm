@@ -159,8 +159,8 @@ get_thermrange <- function(species, target_folder, skip_done = TRUE) {
       year = c(NA, rep(c("dec50", "dec100"), 5))
     )
     
-    masked_data <- list()
-    limits <- list()
+    masked_data <- vector(mode = "list", length = nrow(scenarios))
+    limits <- vector(mode = "list", length = nrow(scenarios))
     
     for (i in seq_len(nrow(scenarios))) {
       
@@ -198,12 +198,8 @@ get_thermrange <- function(species, target_folder, skip_done = TRUE) {
     names(masked_data) <- gsub("_NA", "", paste0(scenarios$scenario, "_", scenarios$year))
     
     if (output_format == "multiband") {
-      areas <- lapply(seq_len(nlyr(masked_data)), function(x){
-        sel_pol <- masked_data[[x]]
-        ex <- terra::expanse(sel_pol, unit = "km")
-        ex <- ex$area
-        data.frame(area = ex)
-      })
+      areas <- terra::expanse(masked_data, unit = "km")
+      areas <- data.frame(area = areas[,2])
 
       writeRaster(masked_data, outfile, datatype = "INT1U")
       obissdm::cogeo_optim(outfile)
@@ -223,9 +219,10 @@ get_thermrange <- function(species, target_folder, skip_done = TRUE) {
       masked_data_pol_sf <- sf::st_as_sf(masked_data_pol)
       
       sfarrow::st_write_parquet(masked_data_pol_sf, outfile)
+
+      areas <- do.call("rbind", areas)
     }
 
-    areas <- do.call("rbind", areas)
     areas$scenario <- scenarios$scenario
     areas$year <- scenarios$year
     
