@@ -229,7 +229,7 @@ get_thermrange <- function(species, target_folder, skip_done = TRUE) {
     areas$scenario <- scenarios$scenario
     areas$year <- scenarios$year
     
-    outfile_json <- gsub("thermenvelope.parquet|thermenvelop.tif", "thermmetrics.json", outfile)
+    outfile_json <- gsub("thermenvelope.parquet|thermenvelope.tif", "thermmetrics.json", outfile)
     outfile_json <- gsub("predictions", "metrics", outfile_json)
     
     jsonlite::write_json(list(
@@ -253,10 +253,11 @@ get_thermrange <- function(species, target_folder, skip_done = TRUE) {
 results_folder <- "/data/scps/v5/results"
 tg_species <- list.files(results_folder)
 tg_species <- gsub("taxonid=", "", tg_species)
+tg_species <- as.integer(tg_species)
 
 # Run in parallel
 plan(multisession, workers = 40)
 
-results <- future_map(as.numeric(tg_species), function(sp) try(get_thermrange(sp, target_folder = results_folder)), .progress = T)
+results <- future_map(tg_species, function(sp) try(get_thermrange(sp, target_folder = results_folder)), .progress = T)
 
 print(results[1:4])

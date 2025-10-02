@@ -201,6 +201,10 @@ for (sp in taxons) {
                 method <- NULL
                 method_name <- NULL
             }
+        } else if (tools::file_ext(met) == "json") {
+            met_type <- pystac$MediaType$JSON
+            method <- NULL
+            method_name <- NULL
         }
 
         item_what_short <- gsub("what=", "", sub(".*?(what=.*?)\\..*", "\\1", met))
@@ -213,6 +217,7 @@ for (sp in taxons) {
             item_what_short == "posteval_hyperniche" ~ "Post-evaluation: hyperniche",
             item_what_short == "posteval_niche" ~ "Post-evaluation: niche overlap",
             item_what_short == "thresholds" ~ "Model thresholds",
+            item_what_short == "thermmetrics" ~ "Thermal limits metrics",
             .default = item_what_short
         )
         item_what <- gsub(
@@ -228,6 +233,7 @@ for (sp in taxons) {
             item_what_short == "posteval_hyperniche" ~ "Post-evaluation: hyperniche",
             item_what_short == "posteval_niche" ~ "Post-evaluation: niche overlap",
             item_what_short == "thresholds" ~ "Model thresholds",
+            item_what_short == "thermmetrics" ~ "Thermal limits metrics",
             .default = item_what_short
         )
 
