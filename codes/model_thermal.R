@@ -50,7 +50,7 @@ alt_kde <- function(p, fhat) {
 get_envelope <- function (sp_pts, env) {
  
   # Use same standards as speedy
-  sf::sf_use_s2(FALSE)
+  #sf::sf_use_s2(FALSE)
   #points_per_m2 <- 1/3e+08
   max_points <- 10000
   kde_bandwidth <- 0.8
@@ -64,8 +64,8 @@ get_envelope <- function (sp_pts, env) {
     return(NULL)
   }
   
-  if (length(dist) > max_points) {
-    points <- terra::vect(sf::st_sample(sf::st_as_sf(dist), max_points))
+  if (nrow(dist) > max_points) {
+    points <- dist[sample(seq_len(nrow(dist)), max_points),]
   } else {
     points <- dist
   }
@@ -88,20 +88,23 @@ get_envelope <- function (sp_pts, env) {
 }
 
 get_masked <- function(percentiles, layer) {
-  
-  masked <- layer
-  masked[layer >= percentiles[1] & layer <= percentiles[2]] <- 1
-  masked[layer < percentiles[1] | layer > percentiles[2]] <- NA
+
+  masked <- terra::classify(layer, matrix(c(-Inf, percentiles[1], NA), ncol = 3), right = F)
+  masked <- terra::classify(masked, matrix(c(percentiles[2], Inf, NA), ncol = 3))
+  masked <- terra::classify(masked, matrix(c(-Inf, Inf, 1), ncol = 3))
   
   return(masked)
 }
 
 # Create a function to generate the thermal range maps
-get_thermrange <- function(species, target_folder, skip_done = TRUE) {
+get_thermrange <- function(species, target_folder, model_acro, output_format,
+                           skip_done = TRUE, mem_frac = NULL) {
   
+  # For memory management
+  if (!is.null(mem_frac)) terra::terraOptions(memfrac = mem_frac)
+
   # Load species data
-  sp_code <- species
-  sp_data <- read_parquet(paste0("data/species/key=", sp_code, ".parquet"))
+  sp_data <- read_parquet(paste0("data/species/key=", species, ".parquet"))
   
   sp_sel_data <- sp_data %>%
     select(decimalLongitude, decimalLatitude, data_type, taxonID) %>%
@@ -158,25 +161,32 @@ get_thermrange <- function(species, target_folder, skip_done = TRUE) {
                                   each = 2)),
       year = c(NA, rep(c("dec50", "dec100"), 5))
     )
+
+    # Load SST layers
+    sst_layers <- rep(NA, length(scenarios))
+    for (sc in seq_len(nrow(scenarios))) {
+        if (scenarios$scenario[sc] != "current") {
+            pred_layer <- gsub("current", paste0("future/", scenarios$scenario[sc]), temp_sel)
+            pred_layer <- gsub("baseline", scenarios$scenario[sc], pred_layer)
+            pred_layer <- gsub("_mean", paste0("_", scenarios$year[sc], "_mean"), pred_layer)
+        } else {
+            pred_layer <- temp_sel
+        }
+        sst_layers[sc] <- pred_layer
+    }
+
+    sst_layers <- rast(sst_layers)
+
+    cli::cat_line(cli::col_cyan("Masking SST layers"))
+    masked_data <- get_masked(envelope, sst_layers)
     
-    masked_data <- vector(mode = "list", length = nrow(scenarios))
     limits <- vector(mode = "list", length = nrow(scenarios))
     
     for (i in seq_len(nrow(scenarios))) {
       
       cli::cat_line(cli::col_cyan(paste("Processing scenario", i, "out of", nrow(scenarios))))
       
-      if (scenarios$scenario[i] != "current") {
-        pred_layer <- gsub("current", paste0("future/", scenarios$scenario[i]), temp_sel)
-        pred_layer <- gsub("baseline", scenarios$scenario[i], pred_layer)
-        pred_layer <- gsub("_mean", paste0("_", scenarios$year[i], "_mean"), pred_layer)
-      } else {
-        pred_layer <- temp_sel
-      }
-      pred_layer <- rast(pred_layer)
-      
-      masked_data[[i]] <- get_masked(envelope, pred_layer)
-      limits_t <- terra::extract(pred_layer, sp_sel_data[,1:2], ID = F)
+      limits_t <- terra::extract(sst_layers[[i]], sp_sel_data[,1:2], ID = F)
       limits[[i]] <- data.frame(
         q_0.05 = round(quantile(limits_t[,1], 0.05), 1),
         q_0.5 = round(quantile(limits_t[,1], 0.5), 1),
@@ -191,8 +201,7 @@ get_thermrange <- function(species, target_folder, skip_done = TRUE) {
     }
     
     limits <- do.call("rbind", limits)
-    
-    masked_data <- rast(masked_data)
+
     masked_data <- as.int(masked_data)
     
     names(masked_data) <- gsub("_NA", "", paste0(scenarios$scenario, "_", scenarios$year))
@@ -258,8 +267,10 @@ plan(multisession, workers = parallel_workers)
 mem_frac <- 0.9 / parallel_workers
 
 results <- future_map(tg_species, function(sp) {
-  terra::terraOptions(memfrac = mem_frac)
-  try(get_thermrange(sp, target_folder = results_folder))
+  try(get_thermrange(sp, target_folder = results_folder,
+                     model_acro = model_acro,
+                     output_format = output_format,
+                     mem_frac = mem_frac))
 }, .progress = T)
 
 print(results[1:4])
