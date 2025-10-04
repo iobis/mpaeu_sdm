@@ -130,7 +130,7 @@ get_thermrange <- function(species, target_folder, model_acro, output_format,
     return("already_saved")
   }
   
-  if (nrow(sp_sel_data) >= 15) {
+  if (nrow(sp_sel_data) >= 10) {
     
     # Load ecological information
     eco_info <- arrow::open_csv_dataset("data/species_ecoinfo.csv") %>%
