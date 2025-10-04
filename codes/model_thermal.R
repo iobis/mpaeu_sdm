@@ -111,8 +111,7 @@ get_thermrange <- function(species, target_folder, model_acro, output_format,
   
   sp_sel_data <- sp_data %>%
     select(decimalLongitude, decimalLatitude, data_type, taxonID) %>%
-    filter(data_type == "fit_points") %>%
-    collect()
+    filter(data_type == "fit_points")
   
   if (output_format == "multiband") {
     outfile <- paste0(target_folder, "/taxonid=", species, "/model=", model_acro,
@@ -134,7 +133,8 @@ get_thermrange <- function(species, target_folder, model_acro, output_format,
     
     # Load ecological information
     eco_info <- arrow::open_csv_dataset("data/species_ecoinfo.csv") %>%
-      filter(taxonID == species)
+      filter(taxonID == species) %>%
+      collect()
     
     if (nrow(eco_info) < 1) {
       eco_info <- obissdm::mp_get_ecoinfo(
