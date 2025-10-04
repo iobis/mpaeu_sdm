@@ -12,10 +12,13 @@ library(arrow)
 library(dplyr)
 library(furrr)
 source("functions/components_model_species.R")
+source("functions/utils.R")
 
 # Settings ----
 model_acro <- "mpaeu"
 output_format <- "multiband" # either "parquet" or "multiband"
+results_folder <- "/data/scps/v5/results"
+tg_species <- extract_storr()
 
 # Prepare adapted function to get thermal envelope
 # This function is based on the `get_thermal_envelope` of the package `speedy`
@@ -255,12 +258,6 @@ get_thermrange <- function(species, target_folder, model_acro, output_format,
 
 
 # Fit thermal envelopes for all species ----
-
-results_folder <- "/data/scps/v5/results"
-tg_species <- list.files(results_folder)
-tg_species <- gsub("taxonid=", "", tg_species)
-tg_species <- as.integer(tg_species)
-
 # Run in parallel
 parallel_workers <- 40
 plan(multisession, workers = parallel_workers)
