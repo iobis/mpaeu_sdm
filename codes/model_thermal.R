@@ -18,7 +18,7 @@ source("functions/utils.R")
 model_acro <- "mpaeu"
 output_format <- "multiband" # either "parquet" or "multiband"
 results_folder <- "/data/scps/v5/results"
-tg_species <- extract_storr()
+tg_species <- as.integer(extract_storr())
 
 # Prepare adapted function to get thermal envelope
 # This function is based on the `get_thermal_envelope` of the package `speedy`
@@ -134,8 +134,7 @@ get_thermrange <- function(species, target_folder, model_acro, output_format,
     
     # Load ecological information
     eco_info <- arrow::open_csv_dataset("data/species_ecoinfo.csv") %>%
-      filter(taxonID == species) %>%
-      collect()
+      filter(taxonID == species)
     
     if (nrow(eco_info) < 1) {
       eco_info <- obissdm::mp_get_ecoinfo(
