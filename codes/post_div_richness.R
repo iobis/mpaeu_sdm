@@ -10,6 +10,7 @@ library(dplyr)
 library(glue)
 library(terra)
 source("functions/post_div_functions.R")
+set.seed(2025)
 
 # Settings
 results_folder <- "/data/scps/v5/results"
