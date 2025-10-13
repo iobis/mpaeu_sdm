@@ -58,6 +58,13 @@ scen_grid <- data.frame(
 
 save_raster <- \(r, file, as_cog = TRUE) {
   r <- as.int(r)
+  setMinMax(r)
+  mx <- max(minmax(r))
+  if (mx > 65000) {
+    dt <- "INT4U"
+  } else {
+    dt <- "INT2U"
+  }
   writeRaster(r, file, datatype = "INT2U", overwrite = TRUE)
   obissdm::cogeo_optim(file)
   return(invisible(NULL))
