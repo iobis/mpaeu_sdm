@@ -65,7 +65,7 @@ save_raster <- \(r, file, as_cog = TRUE) {
   } else {
     dt <- "INT2U"
   }
-  writeRaster(r, file, datatype = "INT2U", overwrite = TRUE)
+  writeRaster(r, file, datatype = dt, overwrite = TRUE)
   obissdm::cogeo_optim(file)
   return(invisible(NULL))
 }
