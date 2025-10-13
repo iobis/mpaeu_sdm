@@ -133,7 +133,6 @@ for (tg in seq_len(nrow(types_grid))) {
 
             # Produce traditional layer
             cont_richness <- sum(layers)
-            cont_richness <- cont_richness / 100
 
             # Produce binary layer
             bin_layers <- classify(layers, matrix(c(0, Inf, 1), nrow = 1))
