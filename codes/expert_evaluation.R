@@ -48,13 +48,44 @@ for (k in done) {
         best_score <- best_score[order(best_score)][1]
         best_score_n <- as.integer(strtrim(best_score, 1))
 
+        # Get CBI
+        list.files(file.path(
+                    base_folder,
+                    glue::glue("taxonid=994114/model=mpaeu/")
+                ))
+        metrics_files <- list.files(file.path(
+                    results_folder,
+                    glue::glue("taxonid={k}/model={model_acro}/metrics/")
+                ), full.names = TRUE, pattern = "cvmetrics")
+        cbi_values <- rep(NA, length(metrics_files))
+        for (l in seq_along(metrics_files)) {
+            mf <- arrow::read_parquet(metrics_files[l])
+            if ("what" %in% colnames(mf)) {
+                mf <- mf[mf$what == "mean",]
+            }
+            cbi_values[l] <- mean(mf$cbi, na.rm = TRUE)
+        }
+        which_model <- basename(metrics_files)[which.max(cbi_values)]
+        which_model <- gsub("_what=.*", "", gsub(".*method=", "", which_model))
+        cbi_as_score <- dplyr::case_when(
+            cbi_values >= 0.3 & cbi_values < 0.4 ~ 5,
+            cbi_values >= 0.4 & cbi_values < 0.5 ~ 4,
+            cbi_values >= 0.5 & cbi_values < 0.6 ~ 3,
+            cbi_values >= 0.6 & cbi_values < 0.7 ~ 2,
+            cbi_values >= 0.7 ~ 1
+        )
+        cbi_as_score <- cbi_as_score[which.max(cbi_values)]
+
         species_general <- list(
             model = model_acro,
             taxonID = k,
             best_score = best_score,
             best_score_n = best_score_n,
-            cbi_score = NA,
-            average_score = NA,
+            cbi_score = round(max(cbi_values), 1),
+            average_cbi = round(mean(cbi_values, na.rm = TRUE), 1),
+            sd_cbi = round(sd(cbi_values, na.rm = TRUE), 1),
+            best_cbi = which_model,
+            average_score = mean(c(cbi_as_score, best_score_n)),
             evaluators = unique(sp_dat$Evaluator)
         )
         eval_status <- "evaluated"
