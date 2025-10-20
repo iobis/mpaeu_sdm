@@ -147,3 +147,33 @@ for (tg in seq_len(nrow(types_grid))) {
         }
     }
 }
+
+# Save occurrence records info ------
+species_list <- read.csv(obissdm::recent_file("data", "all_splist"))
+species_list <- species_list[species_list$taxonID %in% unlist(biogenic_groups, use.names = F),]
+
+for (g in seq_len(length(groups))) {
+    cli::cli_alert_info(cli::bg_green("Group {g} out of {length(groups)}"))
+
+    sel_species <- biogenic_groups[[g]]
+
+    species_recs <- file.path(results_folder, glue(
+        "taxonid={sel_species}/model={model_acro}/taxonid={sel_species}_model={model_acro}_what=fitocc.parquet"
+    ))
+
+    group_points <- vector("list", length(species_recs))
+    for (ss in sel_species) {
+        group_points[[ss]] <- arrow::read_parquet(species_recs[ss])
+        group_points[[ss]]$species <- species_list$scientificName[species_list$taxonID == sel_species[ss]]
+        group_points[[ss]]$taxonID <- sel_species[ss]
+    }
+    group_points <- dplyr::bind_rows(group_points)
+
+    outgroup <- gsub("\\/", "-", tolower(names(biogenic_groups)[g]))
+    outfile <- glue::glue(
+        "_model={model_acro}_what=fitocc.parquet"
+    )
+    arrow::write_parquet(
+        group_points, file.path(out_folder, paste0("habitat=", outgroup, outfile))
+    )
+}
