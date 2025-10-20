@@ -49,10 +49,6 @@ for (k in done) {
         best_score_n <- as.integer(strtrim(best_score, 1))
 
         # Get CBI
-        list.files(file.path(
-                    base_folder,
-                    glue::glue("taxonid=994114/model=mpaeu/")
-                ))
         metrics_files <- list.files(file.path(
                     results_folder,
                     glue::glue("taxonid={k}/model={model_acro}/metrics/")
