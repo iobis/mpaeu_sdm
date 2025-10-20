@@ -162,14 +162,14 @@ for (g in seq_len(length(groups))) {
     ))
 
     group_points <- vector("list", length(species_recs))
-    for (ss in sel_species) {
+    for (ss in seq_along(sel_species)) {
         group_points[[ss]] <- arrow::read_parquet(species_recs[ss])
         group_points[[ss]]$species <- species_list$scientificName[species_list$taxonID == sel_species[ss]]
         group_points[[ss]]$taxonID <- sel_species[ss]
     }
     group_points <- dplyr::bind_rows(group_points)
 
-    outgroup <- gsub("\\/", "-", tolower(names(biogenic_groups)[g]))
+    outgroup <- gsub("\\/", "-", tolower(groups[g]))
     outfile <- glue::glue(
         "_model={model_acro}_what=fitocc.parquet"
     )
