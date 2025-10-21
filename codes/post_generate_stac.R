@@ -252,6 +252,17 @@ for (sp in taxons) {
             item_what_short == "thermmetrics" ~ "Thermal limits metrics",
             .default = item_what_short
         )
+        if (!is.null(method)) {
+            method_f_name <- dplyr::case_when(
+                method == "maxent" ~ "Maxent",
+                method == "xgboost" ~ "XGBoost",
+                method == "rf_classification_ds" ~ "Random Forest - Down-sampled classification",
+                method == "esm" ~ "Ensemble of Small Models (ESM)",
+                method == "ensemble" ~ "Ensemble of models",
+                .default = method
+            )
+            item_title <- paste(method_f_name, "-", item_title)
+        }
 
         file_path <- file.path(s3_path, glue("species/taxonid={sp}/model={project_id}/metrics/{met}"))
         item$add_asset(
