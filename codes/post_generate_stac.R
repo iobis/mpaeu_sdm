@@ -1,7 +1,9 @@
 library(reticulate)
 library(glue)
+library(terra)
 source("functions/utils.R")
-#py_install("pystac")
+# py_install("pystac")
+# py_install("jsonschema")
 pystac <- import("pystac")
 dt <- import("datetime")
 
@@ -62,6 +64,12 @@ species_project_catalog$describe()
 
 pb <- progress::progress_bar$new(total = length(taxons))
 
+get_minmax <- function(file, base_file = sp_results_folder) {
+    r <- terra::rast(file.path(base_file, file), lyrs = 1)
+    terra::setMinMax(r)
+    range(minmax(r))
+}
+
 for (sp in taxons) {
     pb$tick()
 
@@ -71,7 +79,6 @@ for (sp in taxons) {
         glue("taxonid={sp}/model={project_id}/predictions")
     ) |>
         list.files(pattern = "\\.tif$")
-    predictions <- gsub("mask", "what=mask", predictions) #temp
 
     mask_file <- predictions[grepl("what=mask", predictions)]
     predictions <- predictions[!grepl("what=mask", predictions)]
@@ -87,21 +94,25 @@ for (sp in taxons) {
         glue("taxonid={sp}/model={project_id}/taxonid={sp}_model={project_id}_what=fitocc.parquet")
     ) |>
         arrow::read_parquet()
-    fit_extent <- c(min(fit_pts$decimalLongitude), min(fit_pts$decimalLatitude),
-                    max(fit_pts$decimalLongitude), max(fit_pts$decimalLatitude))
+    fit_extent <- c(
+        min(fit_pts$decimalLongitude), min(fit_pts$decimalLatitude),
+        max(fit_pts$decimalLongitude), max(fit_pts$decimalLatitude)
+    )
     fit_extent <- round(fit_extent, 2)
 
     log_file <- jsonlite::read_json(
         file.path(
             sp_results_folder,
             glue("taxonid={sp}/model={project_id}/taxonid={sp}_model={project_id}_what=log.json")
-        ), simplifyVector = TRUE
+        ),
+        simplifyVector = TRUE
     )
 
     if (length(as.vector(log_file$model_good)) > 1) {
         good_models <- c(as.vector(log_file$model_good), "ensemble")
     } else {
         good_models <- as.vector(log_file$model_good)
+        if (is.numeric(good_models)) good_models <- "esm"
     }
 
     item <- pystac$Item(
@@ -121,6 +132,8 @@ for (sp in taxons) {
         )
     )
 
+    validation <- item$validate()
+
     for (pred in predictions) {
         method <- gsub("method=", "", sub(".*?(method=.*?)_scen.*", "\\1", pred))
         method_name <- dplyr::case_when(
@@ -138,6 +151,7 @@ for (sp in taxons) {
         }
         scenario_name <- toupper(gsub("dec100", "2100", gsub("dec50", "2050", gsub("_", " ", scenario))))
         scenario_name <- dplyr::case_when(
+            scenario_name == "CURRENT" ~ "Current",
             grepl(126, scenario_name) ~ gsub("ssp126", "SSP1 (2.6)", scenario_name),
             grepl(245, scenario_name) ~ gsub("ssp245", "SSP2 (4.5)", scenario_name),
             grepl(370, scenario_name) ~ gsub("ssp370", "SSP3 (7.0)", scenario_name),
@@ -154,7 +168,8 @@ for (sp in taxons) {
         }
         pred_type_name <- ifelse(grepl("uncertainty", pred_type), "uncertainty", "prediction")
 
-        file_path <- file.path(s3_path, glue("species/taxonid={sp}/model={project_id}/predictions/{pred}"))
+        base_file_path <- glue("species/taxonid={sp}/model={project_id}/predictions/{pred}")
+        file_path <- file.path(s3_path, base_file_path)
 
         item$add_asset(
             pred_type,
@@ -165,7 +180,8 @@ for (sp in taxons) {
                     scenario = scenario,
                     scenario_text = scenario_name,
                     method = method,
-                    class = pred_type_name
+                    class = pred_type_name,
+                    range_values = get_minmax(gsub("species/", "", base_file_path))
                 ),
                 media_type = pystac$MediaType$COG,
                 roles = list("data")
@@ -186,7 +202,7 @@ for (sp in taxons) {
             method <- NULL
             method_name <- NULL
         } else if (tools::file_ext(met) == "parquet") {
-            met_type <- "application/vnd.apache.parquet" #pystac not working here
+            met_type <- "application/vnd.apache.parquet" # pystac not working here
             if (grepl("method=", met)) {
                 method <- gsub("method=", "", sub(".*?(method=.*?)_what.*", "\\1", met))
                 method_name <- dplyr::case_when(
@@ -313,15 +329,18 @@ for (sp in taxons) {
             grepl("what=mask", other) ~ "Mask to restrict predictions (multi band, each band is a different mask)",
             grepl("what=mess", other) ~ "MESS uncertainty metric",
             grepl("what=shape", other) ~ "SHAPE uncertainty metric",
-            grepl("what=thermenvelope", other) ~ "Thermal envelope (each band is a time period)"
+            grepl("what=thermenvelope", other) ~ "Thermal envelope (each band is a time period)",
+            grepl("what=experteval", other) ~ "Expert evaluation (empty, if species not assessed)"
         )
+
         asset_title <- dplyr::case_when(
             grepl("what=fitocc", other) ~ "Fit points",
             grepl("what=log", other) ~ "Model details",
             grepl("what=mask", other) ~ "Mask",
             grepl("what=mess", other) ~ "MESS",
             grepl("what=shape", other) ~ "SHAPE",
-            grepl("what=thermenvelope", other) ~ "Thermal envelope"
+            grepl("what=thermenvelope", other) ~ "Thermal envelope",
+            grepl("what=experteval", other) ~ "Expert evaluation"
         )
 
         asset_file_type <- dplyr::case_when(
@@ -330,16 +349,18 @@ for (sp in taxons) {
             grepl("what=mask", other) ~ pystac$MediaType$COG,
             grepl("what=mess", other) ~ pystac$MediaType$COG,
             grepl("what=shape", other) ~ pystac$MediaType$COG,
-            grepl("what=thermenvelope", other) ~ pystac$MediaType$COG
+            grepl("what=thermenvelope", other) ~ pystac$MediaType$COG,
+            grepl("what=experteval", other) ~ pystac$MediaType$JSON
         )
 
-        file_sub_path <- dplyr::case_when( 
+        file_sub_path <- dplyr::case_when(
             grepl("what=fitocc", other) ~ glue("species/taxonid={sp}/model={project_id}/{other}"),
             grepl("what=log", other) ~ glue("species/taxonid={sp}/model={project_id}/{other}"),
             grepl("what=mask", other) ~ glue("species/taxonid={sp}/model={project_id}/predictions/{other}"),
             grepl("what=mess", other) ~ glue("species/taxonid={sp}/model={project_id}/predictions/{other}"),
             grepl("what=shape", other) ~ glue("species/taxonid={sp}/model={project_id}/predictions/{other}"),
-            grepl("what=thermenvelope", other) ~ glue("species/taxonid={sp}/model={project_id}/predictions/{other}")
+            grepl("what=thermenvelope", other) ~ glue("species/taxonid={sp}/model={project_id}/predictions/{other}"),
+            grepl("what=experteval", other) ~ glue("species/taxonid={sp}/model={project_id}/{other}")
         )
         file_sub_path <- file.path(s3_path, file_sub_path)
 
@@ -355,11 +376,13 @@ for (sp in taxons) {
         )
     }
 
+    validation <- item$validation()
+
     i <- species_collection$add_item(item)
 }
 
-#species_collection$describe()
-#root_catalog$describe()
+# species_collection$describe()
+# root_catalog$describe()
 
 # Project catalogue for diversity -----
 diversity_project_catalog <- pystac$Catalog(
@@ -388,12 +411,13 @@ diversity_project_catalog$describe()
 
 diversity_files <- list.files(div_results_folder)
 diversity_types <- diversity_files[diversity_files != "preproc"]
-diversity_types <- gsub("metric=", "",
-                        gsub("_model*.*", "", diversity_types)) |>
+diversity_types <- gsub(
+    "metric=", "",
+    gsub("_model*.*", "", diversity_types)
+) |>
     unique()
 
 for (div in diversity_types) {
-
     metric_explanation <- dplyr::case_when(
         div == "lcbd" ~ "Local Contribution to Beta Diversity",
         div == "richness" ~ "Richness, as the sum of the (thresholded) SDMs",
@@ -412,14 +436,23 @@ for (div in diversity_types) {
         )
     )
 
+    item$validate()
+
     id_div <- diversity_files[grepl(div, diversity_files)]
+
+    if (any(grepl("splist", id_div))) {
+        splist_file <- id_div[grepl("splist", id_div)]
+        id_div <- id_div[!grepl("splist", id_div)]
+    } else {
+        splist_file <- NULL
+    }
 
     for (id in id_div) {
         asset_type <- gsub(
             glue("metric={div}_model={project_id}_"),
             "", id
         ) |>
-        (\(x) gsub("_cog\\.tif", "", x))() 
+            (\(x) gsub("_cog\\.tif", "", x))()
 
         file_sub_path <- file.path(s3_path, glue("diversity/model={project_id}"), id)
 
@@ -440,8 +473,10 @@ for (div in diversity_types) {
                 grepl(585, scenario_name) ~ gsub("ssp585", "SSP5 (8.5)", scenario_name),
                 .default = scenario_name
             )
-            asset_title <- glue("{scenario_name} - {toupper(th)} - {ifelse(type == 'const', 'Constrained', 'Standard')} - ",
-                                "{stringr::str_to_title(group)}")
+            asset_title <- glue(
+                "{scenario_name} - {toupper(th)} - {ifelse(type == 'const', 'Constrained', 'Standard')} - ",
+                "{stringr::str_to_title(group)}"
+            )
         }
 
         if (grepl("what=", asset_type)) {
@@ -462,7 +497,8 @@ for (div in diversity_types) {
                     post_treatment = type,
                     scenario = scen,
                     scenario_text = scenario_name,
-                    what = what
+                    what = what,
+                    range_values = get_minmax(gsub("diversity/", "", id), base_file = div_results_folder)
                 ),
                 media_type = pystac$MediaType$COG,
                 roles = list("data")
@@ -470,11 +506,43 @@ for (div in diversity_types) {
         )
     }
 
+    if (!is.null(splist_file)) {
+        asset_type <- gsub(
+            glue("metric={div}_model={project_id}_"),
+            "", splist_file
+        ) |>
+            (\(x) gsub("\\.parquet", "", x))()
+
+        ftype <- "application/vnd.apache.parquet"
+
+        file_sub_path <- file.path(s3_path, glue("diversity/model={project_id}"), splist_file)
+        what <- gsub("what=", "", asset_type)
+        asset_title <- dplyr::case_when(
+            what == "splist" ~ "Species list",
+            .default = stringr::str_to_title(what)
+        )
+
+        item$add_asset(
+            asset_type,
+            pystac$Asset(
+                href = file_sub_path,
+                title = asset_title,
+                extra_fields = list(
+                    what = what
+                ),
+                media_type = ftype,
+                roles = list("data")
+            )
+        )
+    }
+
+    validation <- item$validate()
+
     i <- diversity_collection$add_item(item)
 }
 
-#diversity_collection$describe()
-#root_catalog$describe()
+# diversity_collection$describe()
+# root_catalog$describe()
 
 
 # Project catalogue for habitat -----
@@ -504,12 +572,13 @@ habitat_project_catalog$describe()
 
 habitat_files <- list.files(hab_results_folder)
 habitat_types <- habitat_files[habitat_files != "preproc"]
-habitat_types <- gsub("habitat=", "",
-                      gsub("_model*.*", "", habitat_types)) |>
+habitat_types <- gsub(
+    "habitat=", "",
+    gsub("_model*.*", "", habitat_types)
+) |>
     unique()
 
 for (hab in habitat_types) {
-
     hab_group <- stringr::str_to_sentence(gsub("_", " ", hab))
 
     item <- pystac$Item(
@@ -526,11 +595,21 @@ for (hab in habitat_types) {
     id_hab <- habitat_files[grepl(hab, habitat_files)]
 
     for (id in id_hab) {
-        asset_type <- gsub(
-            glue::glue("habitat={hab}_model={project_id}_"),
-            "", id
-        ) |>
-        (\(x) gsub("_cog\\.tif", "", x))() 
+        if (grepl("fitocc", id)) {
+            asset_type <- gsub(
+                glue::glue("habitat={hab}_model={project_id}_"),
+                "", id
+            ) |>
+                (\(x) gsub("\\.parquet", "", x))()
+            ftype <- "application/vnd.apache.parquet"
+        } else {
+            asset_type <- gsub(
+                glue::glue("habitat={hab}_model={project_id}_"),
+                "", id
+            ) |>
+                (\(x) gsub("_cog\\.tif", "", x))()
+            ftype <- pystac$MediaType$COG
+        }
 
         file_sub_path <- file.path(s3_path, glue("habitat/model={project_id}"), id)
 
@@ -550,34 +629,51 @@ for (hab in habitat_types) {
             .default = scenario_name
         )
 
-        asset_title <- glue("{stringr::str_to_title(habitat)} - ",
-                            "{scenario_name} - {toupper(th)} - {ifelse(type == 'const', 'Constrained', 'Standard')} - ",
-                            "{stringr::str_to_title(what)}")
+        if (grepl("fitocc", id)) {
+            asset_title <- glue(
+                "{stringr::str_to_title(habitat)} - ",
+                "Species occurrences"
+            )
+            extra_list <- list(
+                habitat = habitat,
+                what = what
+            )
+        } else {
+            asset_title <- glue(
+                "{stringr::str_to_title(habitat)} - ",
+                "{scenario_name} - {toupper(th)} - {ifelse(type == 'const', 'Constrained', 'Standard')} - ",
+                "{stringr::str_to_title(what)}"
+            )
+            extra_list <- list(
+                habitat = habitat,
+                threshold = th,
+                post_treatment = type,
+                scenario = scen,
+                scenario_text = scenario_name,
+                what = what,
+                range_values = get_minmax(gsub("habitat/", "", id), base_file = hab_results_folder)
+            )
+        }
 
         item$add_asset(
             asset_type,
             pystac$Asset(
                 href = file_sub_path,
                 title = asset_title,
-                extra_fields = list(
-                    habitat = habitat,
-                    threshold = th,
-                    post_treatment = type,
-                    scenario = scen,
-                    scenario_text = scenario_name,
-                    what = what
-                ),
-                media_type = pystac$MediaType$COG,
+                extra_fields = extra_list,
+                media_type = ftype,
                 roles = list("data")
             )
         )
     }
 
+    item$validate()
+
     i <- habitat_collection$add_item(item)
 }
 
-#habitat_collection$describe()
-#root_catalog$describe()
+# habitat_collection$describe()
+# root_catalog$describe()
 
 
 root_catalog$normalize_and_save(
@@ -588,6 +684,6 @@ root_catalog$normalize_and_save(
 
 # Optional: upload to S3
 com <- glue::glue(
-    'aws s3 sync {catalog_output} {file.path(s3_path, catalog_output)}'
+    "aws s3 sync {catalog_output} {file.path(s3_path, catalog_output)}"
 )
 system(com)
