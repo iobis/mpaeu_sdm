@@ -376,7 +376,7 @@ for (sp in taxons) {
         )
     }
 
-    validation <- item$validation()
+    validation <- item$validate()
 
     i <- species_collection$add_item(item)
 }
