@@ -64,12 +64,6 @@ species_project_catalog$describe()
 
 pb <- progress::progress_bar$new(total = length(taxons))
 
-get_minmax <- function(file, base_file = sp_results_folder) {
-    r <- terra::rast(file.path(base_file, file), lyrs = 1)
-    terra::setMinMax(r)
-    range(minmax(r))
-}
-
 for (sp in taxons) {
     pb$tick()
 
@@ -180,8 +174,7 @@ for (sp in taxons) {
                     scenario = scenario,
                     scenario_text = scenario_name,
                     method = method,
-                    class = pred_type_name,
-                    range_values = get_minmax(gsub("species/", "", base_file_path))
+                    class = pred_type_name
                 ),
                 media_type = pystac$MediaType$COG,
                 roles = list("data")
@@ -508,8 +501,7 @@ for (div in diversity_types) {
                     post_treatment = type,
                     scenario = scen,
                     scenario_text = scenario_name,
-                    what = what,
-                    range_values = get_minmax(gsub("diversity/", "", id), base_file = div_results_folder)
+                    what = what
                 ),
                 media_type = pystac$MediaType$COG,
                 roles = list("data")
@@ -661,8 +653,7 @@ for (hab in habitat_types) {
                 post_treatment = type,
                 scenario = scen,
                 scenario_text = scenario_name,
-                what = what,
-                range_values = get_minmax(gsub("habitat/", "", id), base_file = hab_results_folder)
+                what = what
             )
         }
 
