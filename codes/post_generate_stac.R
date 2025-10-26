@@ -451,6 +451,17 @@ for (div in diversity_types) {
         splist_file <- NULL
     }
 
+    div_ranges <- id_div |>
+        (\(x) file.path(div_results_folder, x))() |>
+        lapply(\(r) {
+            r |>
+                rast(lyrs = 1) |>
+                setMinMax() |>
+                minmax() |>
+                range()
+        })
+    names(div_ranges) <- id_div
+
     for (id in id_div) {
         asset_type <- gsub(
             glue("metric={div}_model={project_id}_"),
@@ -501,7 +512,8 @@ for (div in diversity_types) {
                     post_treatment = type,
                     scenario = scen,
                     scenario_text = scenario_name,
-                    what = what
+                    what = what,
+                    values_range = div_ranges[[id]]
                 ),
                 media_type = pystac$MediaType$COG,
                 roles = list("data")
@@ -584,6 +596,15 @@ habitat_types <- gsub(
 for (hab in habitat_types) {
     hab_group <- stringr::str_to_sentence(gsub("_", " ", hab))
 
+    id_hab <- habitat_files[grepl(hab, habitat_files)]
+
+    hab_occ_species <- id_hab[grepl("fitocc", id_hab)] |>
+        (\(x) file.path(hab_results_folder, x))() |>
+        arrow::read_parquet() |>
+        dplyr::distinct(taxonID, .keep_all = TRUE) |>
+        dplyr::select(taxonID, species) |>
+        as.list()
+
     item <- pystac$Item(
         id = glue("habitat={hab}"),
         geometry = NULL,
@@ -591,11 +612,21 @@ for (hab in habitat_types) {
         datetime = dt$datetime(2025L, 1L, 1L, tzinfo = dt$timezone$utc),
         properties = list(
             habitat = hab_group,
-            model = project_id
+            model = project_id,
+            species = hab_occ_species
         )
     )
 
-    id_hab <- habitat_files[grepl(hab, habitat_files)]
+    id_hab_ranges <- id_hab[!grepl("fitocc", id_hab)] |>
+        (\(x) file.path(hab_results_folder, x))() |>
+        lapply(\(r) {
+            r |>
+                rast(lyrs = 1) |>
+                setMinMax() |>
+                minmax() |>
+                range()
+        })
+    names(id_hab_ranges) <- id_hab[!grepl("fitocc", id_hab)]
 
     for (id in id_hab) {
         if (grepl("fitocc", id)) {
@@ -653,7 +684,8 @@ for (hab in habitat_types) {
                 post_treatment = type,
                 scenario = scen,
                 scenario_text = scenario_name,
-                what = what
+                what = what,
+                values_range = id_hab_ranges[[id]]
             )
         }
 
