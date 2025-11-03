@@ -9,6 +9,7 @@
 library(dplyr)
 library(glue)
 library(terra)
+library(furrr)
 source("functions/post_div_functions.R")
 set.seed(2025)
 
@@ -66,7 +67,7 @@ save_raster <- \(r, file, as_cog = TRUE) {
     dt <- "INT2U"
   }
   writeRaster(r, file, datatype = dt, overwrite = TRUE)
-  obissdm::cogeo_optim(file)
+  if (as_cog) obissdm::cogeo_optim(file)
   return(invisible(NULL))
 }
 
@@ -195,5 +196,129 @@ for (tg in seq_len(nrow(types_grid))) {
 
     tempf <- paste0("metric=richness_model=", model_acro, "_group=", gsub("\\/", "-", tolower(groups[g])), "_what=raw.tif")
     save_raster(true_richness, file.path(out_folder, tempf))
+  }
+}
+
+
+
+# Step 3 - save species list -----
+colnames(proc_list)[1] <- "taxonID"
+proc_list$taxonID <- as.integer(proc_list$taxonID)
+proc_list <- left_join(proc_list, species_list[,c("taxonID", "scientificName", "group")])
+
+# Check validity on study area
+pb <- progress::progress_bar$new(total = nrow(proc_list))
+proc_list$valid_on_area <- FALSE
+for (k in seq_len(nrow(proc_list))) {
+  pb$tick()
+  r <- rast(file.path(preproc_folder, proc_list$file[k]))
+  if (max(minmax(r)) > 0) {
+    proc_list$valid_on_area[k] <- TRUE
+  }
+}
+
+proc_list_dist <- proc_list |>
+  filter(valid_on_area) |>
+  select(-period, -scenario, -file, -valid_on_area) |>
+  group_by(taxonID, scientificName, group, method, threshold, type) |>
+  distinct()
+
+arrow::write_parquet(proc_list_dist, file.path(out_folder, glue::glue("metric=richness_model={model_acro}_what=splist.parquet")))
+
+
+
+# Step 4 - refugia analysis -------
+n_workers <- 10
+plan(multisession, workers = n_workers)
+max_mem <- 0.9 / n_workers
+
+name_and_save <- \(r, outfile, what) {
+  base_f <- paste0("metric=refugia", outfile)
+  tempf <- paste0(base_f, "what=", what, ".tif")
+  save_raster(as.int(r), file.path(out_folder, tempf))
+  return(invisible())
+} 
+
+for (tg in seq_len(nrow(types_grid))) {
+  cli::cli_alert_info(cli::bg_cyan("Combination {tg} out of {nrow(types_grid)}"))
+  thresh <- types_grid$sel_threshold[tg]
+  mtype <- types_grid$type[tg]
+
+  for (g in seq_len(length(groups))) {
+    cli::cli_alert_info(cli::bg_green("Group {g} out of {length(groups)}"))
+    if (groups[g] == "all") {
+      sel_species <- species_list$taxonID
+    } else {
+      sel_species <- species_list$taxonID[species_list$group == groups[g]]
+    }
+    av_species <- proc_list |>
+      filter(taxonid %in% sel_species) |>
+      filter(threshold == thresh) |>
+      filter(type == mtype)
+
+    # Prepare current layer -----
+    current_list <- av_species |>
+          filter(scenario == scen)
+
+    current_rast <- rast(file.path(preproc_folder, current_list$file)) |>
+      classify(matrix(c(0, Inf, 1), ncol = 3))
+
+    richness <- sum(current_rast)
+
+    # Process future layers -----
+    future_map(2:nrow(scen_grid), \(sc) {
+      require(terra)
+      terraOptions(memfrac = max_mem)
+      scen <- scen_grid$scenario[sc]
+      decade <- scen_grid$decade[sc]
+      if (decade == 2050) {
+        decade <- "dec50"
+      } else if (decade == 2100) {
+        decade <- "dec100"
+      }
+      outgroup <- gsub("\\/", "-", tolower(groups[g]))
+      outfile <- glue::glue(
+        "_model={model_acro}_scen={scen}{ifelse(decade == '', '', paste0('_', decade))}_",
+        "th={thresh}_type={mtype}_group={outgroup}_"
+      )
+      scen_list <- av_species |>
+          filter(scenario == scen) |>
+          filter(period == decade)
+
+      if (nrow(scen_list) != length(unique(scen_list$taxonid))) stop("Potential problem with list. Check.")
+
+      if (interactive()) {
+        layers <- rast(file.path(preproc_folder, scen_list$file))
+      } else {
+        layers <- vrt(file.path(preproc_folder, scen_list$file), options = c("-separate"))
+      }
+
+      layers <- classify(layers, matrix(c(0, Inf, 3), ncol = 3))
+      # 3 - 1 ==> 2 = stability = keep present
+      # 3 - 0 ==> 3 = gain
+      # 0 - 1 ==> -1 = loss
+      # 0 - 0 ==> 0 = stability = keep absent
+
+      result <- layers - current_rast
+
+      gain <- app(result, \(x) sum(x == 3))
+      loss <- app(result, \(x) sum(x == -1))
+
+      stability_pres <- app(result, \(x) sum(x == 2))
+      stability_absc <- app(result, \(x) sum(x == 0))
+
+      turnover <- (loss + gain)/(richness + gain)
+
+      refugia <- 100 - ((loss * 100)/richness)
+
+      gain |> name_and_save(outfile, "gain")
+      loss |> name_and_save(outfile, "loss")
+      stability_pres |> name_and_save(outfile, "stability_pres")
+      stability_absc |> name_and_save(outfile, "stability_absc")
+      (turnover * 100) |> name_and_save(outfile, "turnover")
+      (refugia * 100) |> name_and_save(outfile, "refugia")
+
+      return(invisible(NULL))
+    }, .progress = TRUE)
   }
 }
