@@ -1,4 +1,4 @@
-# <img src="mpaeu_obis_logo.jpg" align="right" width="240" /> MPA Europe - Species distribution models for European marine species
+# <img src="mpaeu_obis_logo.jpg" align="right" width="240" /> MPA Europe - Species distribution models for marine species occurring in European waters
 
 ## About the project
 
