@@ -1,5 +1,4 @@
-Habitat range maps for European marine species
-================
+# <img src="mpaeu_obis_logo.jpg" align="right" width="240" /> MPA Europe - Species distribution models for European marine species
 
 ## About the project
 
@@ -238,3 +237,9 @@ This was a 3 years long project, which was concluded in 2025. Consider that:
 ## Updates
 
 You can check updates on the project [here](NEWS.md), including changes in the code that may be accounted for when replicating the results.
+
+## Support
+
+Grant Agreement 101059988 – MPA Europe | MPA Europe project has been approved under HORIZON-CL6-2021-BIODIV-01-12 — Improved science based maritime spatial planning and identification of marine protected areas.
+
+Co-funded by the European Union. Views and opinions expressed are however those of the authors only and do not necessarily reflect those of the European Union or UK Research and Innovation. Neither the European Union nor the granting authority can be held responsible for them.
