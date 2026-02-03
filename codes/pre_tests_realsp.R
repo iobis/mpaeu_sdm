@@ -6,6 +6,10 @@
 #
 ####################### Model the distribution of species ######################
 
+# NOTE: those tests were done with a previous version of the framework, and
+# much was updated since then. Those species were modelled with the new method
+# and can be found on the S3 bucket.
+
 
 # Load packages / settings ----
 library(obissdm)

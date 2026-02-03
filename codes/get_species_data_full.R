@@ -19,6 +19,7 @@ fs::dir_create("data/raw/")
 api_call <- httr::content(httr::GET("https://api.obis.org/export?complete=true"), as = "parsed")
 api_call <- api_call$results[[1]]
 latest_export <- paste0("https://obis-datasets.ams3.digitaloceanspaces.com/", api_call$s3path)
+# NOTE: deprecated on January 2026 - use open data pathway now: https://github.com/iobis/obis-open-data
 
 options(timeout = 999999999)
 download.file(

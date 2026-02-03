@@ -228,9 +228,17 @@ arrow::write_parquet(proc_list_dist, file.path(out_folder, glue::glue("metric=ri
 
 
 # Step 4 - refugia analysis -------
-n_workers <- 10
-plan(multisession, workers = n_workers)
-max_mem <- 0.9 / n_workers
+parallel <- TRUE
+if (parallel) {
+  n_workers <- 10
+  plan(multisession, workers = n_workers)
+  max_mem <- 0.9 / n_workers
+}
+
+blank_raster <- tempfile(fileext = ".tif")
+blank_m <- rast(file.path(preproc_folder, proc_list$file[1]))
+blank_m[!is.na(blank_m)] <- 0
+writeRaster(blank_m, blank_raster)
 
 name_and_save <- \(r, outfile, what) {
   base_f <- paste0("metric=refugia", outfile)
@@ -239,6 +247,7 @@ name_and_save <- \(r, outfile, what) {
   return(invisible())
 } 
 
+message("=========== Starting refugia analysis ===========\n\n")
 for (tg in seq_len(nrow(types_grid))) {
   cli::cli_alert_info(cli::bg_cyan("Combination {tg} out of {nrow(types_grid)}"))
   thresh <- types_grid$sel_threshold[tg]
@@ -256,17 +265,25 @@ for (tg in seq_len(nrow(types_grid))) {
       filter(threshold == thresh) |>
       filter(type == mtype)
 
+    # If not running in parallel, use below:
     # Prepare current layer -----
     current_list <- av_species |>
-          filter(scenario == scen)
+            filter(scenario == "current")
+    if (!parallel) {
+      
+      if (interactive()) {
+        current_rast <- rast(file.path(preproc_folder, current_list$file))
+      } else {
+        current_rast <- vrt(file.path(preproc_folder, current_list$file), options = c("-separate"))
+      }
 
-    current_rast <- rast(file.path(preproc_folder, current_list$file)) |>
-      classify(matrix(c(0, Inf, 1), ncol = 3))
+      current_rast <- classify(current_rast, matrix(c(0, Inf, 1), ncol = 3))
 
-    richness <- sum(current_rast)
+      richness <- sum(current_rast)
+    }
 
     # Process future layers -----
-    future_map(2:nrow(scen_grid), \(sc) {
+    future_map(2:nrow(scen_grid), \(sc, model_acro = model_acro) {
       require(terra)
       terraOptions(memfrac = max_mem)
       scen <- scen_grid$scenario[sc]
@@ -286,6 +303,27 @@ for (tg in seq_len(nrow(types_grid))) {
           filter(period == decade)
 
       if (nrow(scen_list) != length(unique(scen_list$taxonid))) stop("Potential problem with list. Check.")
+
+      scen_list <- scen_list |>
+        select(taxonid, future_file = file) |>
+        right_join(current_list) |>
+        mutate(future_file = ifelse(is.na(future_file), blank_raster, future_file)) |>
+        select(taxonid, file = future_file)
+      
+      if (nrow(scen_list) != nrow(current_list)) stop("Potential problem with list. Check.")
+
+      if (parallel) {
+        
+        if (interactive()) {
+          current_rast <- rast(file.path(preproc_folder, current_list$file))
+        } else {
+          current_rast <- vrt(file.path(preproc_folder, current_list$file), options = c("-separate"))
+        }
+
+        current_rast <- classify(current_rast, matrix(c(0, Inf, 1), ncol = 3))
+
+        richness <- sum(current_rast)
+      }
 
       if (interactive()) {
         layers <- rast(file.path(preproc_folder, scen_list$file))
