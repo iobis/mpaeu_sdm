@@ -848,14 +848,14 @@
   max_depth_mask <- terra::mask(fit_mask, bath_layer)
 
   # Convex hull mask
-  conv_hull <- terra::convHull(terra::vect(sp_data$coord_training[sp_data$training$presence == 1, ],
+  conv_hull <- terra::hull(terra::vect(sp_data$coord_training[sp_data$training$presence == 1, ],
     geom = coord_names, crs = "EPSG:4326"
-  ))
+  ), type = "convex")
   conv_hull_mask <- mask(base_layer, conv_hull)
 
-  minb_circle <- terra::minCircle(terra::vect(sp_data$coord_training[sp_data$training$presence == 1, ],
+  minb_circle <- terra::hull(terra::vect(sp_data$coord_training[sp_data$training$presence == 1, ],
     geom = coord_names, crs = "EPSG:4326"
-  ))
+  ), type = "circle")
   minb_circle_mask <- mask(base_layer, minb_circle)
 
   # Buffer mask
