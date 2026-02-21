@@ -17,7 +17,7 @@ library(storr)
 source("functions/load_env.R")
 source("functions/components_model_species.R")
 source("functions/auxiliary_modelfit.R")
-n_workers <- 4
+n_workers <- 60
 plan(multisession, workers = n_workers)
 set.seed(2023)
 
@@ -26,49 +26,58 @@ st <- storr_rds("vsptest_storr")
 outfolder <- "results/vsp_testing/"
 fs::dir_create(outfolder)
 
+# Get available combinations
+species <- c(1001, 1002, 1003, 1004)
+combinations <- lapply(species, \(id) {
+    f <- list.files(file.path("data/virtual_species", paste0("key=", id)),
+        full.names = F
+    ) |>
+    (\(x) x[grepl("occurrences", x)])() |>
+    (\(x) x[!grepl("_pa", x)])() |>
+    unique()
+    data.frame(species = id, files = f[order(f)])
+}) |>
+    (\(x) do.call("rbind", x))()
+
 # Prepare functions -------
 # Prepare fit function for parallel processing
-fit_parallel <- function(species, variables, storr_control, n_workers, verbose = TRUE) {
-    terra::terraOptions(memfrac = (0.7 / n_workers))
+fit_parallel <- function(combination_row, combinations_table, variables, storr_control, n_workers = NULL, verbose = TRUE) {
+    if (!is.null(n_workers)) terra::terraOptions(memfrac = (0.7 / n_workers))
 
-    files <- list.files(file.path("data/virtual_species", paste0("key=", species)),
-        full.names = T
+    mo <- combinations_table[combination_row, 2] |>
+        (\(x) gsub("occurrences_", "", gsub("_rep*.*", "", basename(x))))()
+    tf <- combinations_table[combination_row, 2] |>
+        (\(x) gsub("\\.parquet", "", gsub("occurrences_*.*_rep", "", basename(x))))() |>
+        as.integer()
+    species <- combinations_table[combination_row, 1]
+
+    run_code <- paste0(species, "_", mo, "_", tf)
+
+    if (verbose) cli::cli_alert_info("Running species {species} combination {run_code}.")
+
+    if (storr_control$exists(run_code) && storr_control$get(run_code) == "success") return(invisible(NULL))
+
+    tf_base <- file.path("data/virtual_species", paste0("key=", species), combinations_table[combination_row, 2])
+    tf_pa <- file.path("data/virtual_species", paste0("key=", species), 
+        gsub("\\.parquet", "_pa.parquet", combinations_table[combination_row, 2]))
+    if (!file.exists(tf_base)) stop("Error with file tf_base")
+    if (!file.exists(tf_pa)) stop("Error with file tf_pa")
+
+    status <- try(fit_model_vsp(run_code, tf_base, tf_pa, variables, outfolder, verbose = verbose),
+        silent = FALSE
     )
-    files <- files[grepl("occurrences", files)]
 
-    modes <- unique(gsub("_rep*.*", "", basename(files)))
-
-    if (verbose) cli::cli_alert_info("{length(modes)} data types with {sum(grepl(modes[1], files))/2} replicates.")
-
-    for (mo in modes) {
-        if (verbose) cli::cli_alert_info("Executing mode {mo}")
-
-        files_sel <- files[grepl(mo, files)]
-        files_sel_pa <- files_sel[grepl("_pa", files_sel)]
-        files_sel <- files_sel[!grepl("_pa", files_sel)]
-
-        for (tf in seq_along(files_sel)) {
-            tf_base <- files_sel[tf]
-            tf_pa <- files_sel_pa[tf]
-
-            run_code <- paste0(species, "_", mo, "_", tf)
-
-            status <- try(fit_model_vsp(run_code, tf_base, tf_pa, variables, outfolder, verbose = verbose),
-             silent = FALSE)
-
-            if (inherits(status, "try-error")) {
-                storr_control$set(run_code, "failed")
-            } else {
-                storr_control$set(run_code, "success")
-            }
-        }
+    if (inherits(status, "try-error")) {
+        storr_control$set(run_code, "failed")
+    } else {
+        storr_control$set(run_code, "success")
     }
+
     return(invisible(NULL))
 }
 
 # Prepare model fit function, with same parameters used in the model fitting with real species
 fit_model_vsp <- function(species, base_file, pa_file, variables, outfolder, verbose) {
-
     outacro <- "vsp"
 
     # Algorithms to be used
@@ -155,13 +164,12 @@ fit_model_vsp <- function(species, base_file, pa_file, variables, outfolder, ver
     treg <- obissdm::.get_time(treg, "Data loading")
 
 
-
     # PART 2: DATA PREPARING ----
     if (verb_1) cli::cli_alert_info("Preparing data")
 
     # Check which eco-regions are covered by the points
     prep_eco <- .cm_check_ecoregions(
-        ecoregions, fit_pts, eval_pts[,1:2], env, limit_by_depth, depth_buffer,
+        ecoregions, fit_pts, eval_pts[, 1:2], env, limit_by_depth, depth_buffer,
         coord_names, model_log, verb_1
     )
     env <- prep_eco$env
@@ -295,7 +303,6 @@ fit_model_vsp <- function(species, base_file, pa_file, variables, outfolder, ver
             model_log$model_good_threshold <- tg_threshold
 
 
-
             # PART 7: GET RESPONSE CURVES ----
             if (verb_1) cli::cli_alert_info("Getting response curves")
             # Predict models
@@ -347,7 +354,6 @@ fit_model_vsp <- function(species, base_file, pa_file, variables, outfolder, ver
                 pred_out, species, outacro, coord_names, max_depth
             )
             treg <- obissdm::.get_time(treg, "Masks")
-
 
 
             # PART 11: EVALUATE MODELS USING OTHER TECHNIQUES ----
@@ -601,113 +607,42 @@ fit_model_vsp <- function(species, base_file, pa_file, variables, outfolder, ver
 # Apply models -----
 env_vars <- c("thetao-mean", "sws-mean", "so-mean", "o2-mean")
 
-result <- future_map(c(1001, 1002, 1003, 1004),
+result <- future_map(
+    seq_len(nrow(combinations)),
     fit_parallel,
+    combinations_table = combinations,
     variables = env_vars, verbose = FALSE,
     storr_control = st, n_workers = n_workers,
     .progress = TRUE, .options = furrr_options(seed = T)
 )
 
-fit_parallel(
-    1001,
-    variables = env_vars, verbose = TRUE,
-    storr_control = st, n_workers = n_workers)
+lf <- list.files("results/vsp_testing")
 
-# Check overlap -----
-check_overlap <- function(species, output_folder = "results/vsp_testing") {
-    results <- list()
-    for (i in seq_along(species)) {
-        spf <- list.files(output_folder)
-        spf <- spf[grepl(species[i], spf)]
-        
-        sub_results <- list()
-        for (k in seq_along(spf)) {
-            models <- c("maxent", "rf", "xgboost")
-
-            models_results <- list()
-            for (mm in seq_along(models)) {
-                sel_model <- models[mm]
-                if (sel_model == "rf") {
-                    sel_model <- "rf_classification_ds"
-                }
-                r1 <- rast(paste0(
-                    "data/virtual_species/key=", species[i], "/suitability_key", species[i], ".tif"
-                ))
-                if (!file.exists(paste0(
-                    "results/vsp_testing/taxonid=", species[i], "_occurrences_high_bias_1/model=vsp/predictions/taxonid=", species[i], "_occurrences_high_bias_1_model=vsp_method=", sel_model, "_scen=current_cog.tif"
-                ))) next
-                r2 <- rast(paste0(
-                    "results/vsp_testing/taxonid=", species[i], "_occurrences_high_bias_1/model=vsp/predictions/taxonid=", species[i], "_occurrences_high_bias_1_model=vsp_method=", sel_model, "_scen=current_cog.tif"
-                ))
-
-                # thresh <- arrow::read_parquet(
-                #     paste0("results/vsp_testing/", spf[k], "/model=vsp/metrics/", spf[k], "_model=vsp_what=thresholds.parquet")
-                # )
-                # thresh <- thresh |> filter(model == sel_model) |> select(p10) |> pull()
-
-                #r2[r2 < (thresh * 100)] <- 0
-                if (!file.exists(paste0(
-                    "results/vsp_testing/", spf[k], "/model=vsp/predictions/", spf[k], "_model=vsp_mask_cog.tif"
-                ))) next
-                m <- rast(paste0(
-                    "results/vsp_testing/", spf[k], "/model=vsp/predictions/", spf[k], "_model=vsp_mask_cog.tif"
-                ))
-
-                m <- m$fit_region_max_depth
-                NAflag(m) <- 0
-
-                r2 <- mask(r2, m)
-
-                r1 <- mask(r1, r2)
-
-                models_results [[mm]]  <- data.frame(
-                    vsp_sub = spf[k],
-                    Istat = dismo::nicheOverlap(
-                    raster::raster(r1), raster::raster(r2), stat = "I"
-                ),
-                    model = models[mm]
-                )
-            }
-            sub_results[[k]] <- dplyr::bind_rows(models_results)
-        }
-        results[[i]] <- dplyr::bind_rows(sub_results)
-        results[[i]]$vsp <- species[i]
+results <- lapply(lf, \(f) {
+    lff <- list.files(file.path("results/vsp_testing/", f, "model=vsp", "metrics"), full.names = T)
+    r <- list(maxent = NULL, rf = NULL, xgboost = NULL)
+    for (mm in c("maxent", "rf", "xgboost")) {
+        sel_lf <- lff[grepl(mm, lff)]
+        if (length(sel_lf) < 1) next
+        if (!file.exists(sel_lf[grepl("cvmetrics", sel_lf)])) next
+        cv <- read_parquet(sel_lf[grepl("cvmetrics", sel_lf)])
+        if (!file.exists(sel_lf[grepl("fullmetrics", sel_lf)])) next
+        full <- read_parquet(sel_lf[grepl("fullmetrics", sel_lf)])
+        r[[mm]] <- data.frame(
+            group = f,
+            model = mm,
+            cbi_cv = mean(cv$cbi, na.rm = T),
+            auc_cv = mean(cv$auc, na.rm = T),
+            tss_cv = mean(cv$tss_maxsss, na.rm = T),
+            tssp10_cv = mean(cv$tss_p10, na.rm = T),
+            cbi_eval = full$cbi[full$what == "eval"],
+            auc_eval = full$auc[full$what == "eval"],
+            tss_eval = full$tss_maxsss[full$what == "eval"],
+            tssp10_eval = full$tss_p10[full$what == "eval"]
+        )
     }
-    return(dplyr::bind_rows(results))
-}
+    return(dplyr::bind_rows(r))
+})
 
-overlap <- check_overlap(c(1001, 1002, 1003, 1004))
-
-overlap$vsp_sub <- gsub("_.$", "", overlap$vsp_sub)
-
-overlap |> group_by(vsp, vsp_sub, model) |> summarise(mean = round(mean(Istat),1),sd=round(sd(Istat), 2), count = n()) |> 
-    filter(model == "rf") |> filter(grepl("bias", vsp_sub))
-
-##
-library(terra)
-
-sel_model = "rf"
-r1 <- rast("data/virtual_species/key=1001/suitability_key1001.tif")
-r2 <- rast("results/vsp_testing/taxonid=1001_occurrences_high_bias_1/model=vsp/predictions/taxonid=1001_occurrences_high_bias_1_model=vsp_method=rf_classification_ds_scen=current_cog.tif")
-
-thresh <- arrow::read_parquet(
-    "results/vsp_testing/taxonid=1001_occurrences_high_bias_1/model=vsp/metrics/taxonid=1001_occurrences_high_bias_1_model=vsp_what=thresholds.parquet"
-)
-thresh <- thresh |> filter(model == sel_model) |> select(p10) |> pull()
-
-#r2[r2 < (thresh * 100)] <- 0
-m <- rast("results/vsp_testing/taxonid=1001_occurrences_high_bias_1/model=vsp/predictions/taxonid=1001_occurrences_high_bias_1_model=vsp_mask_cog.tif")
-
-m <- m$fit_region_max_depth
-NAflag(m) <- 0
-
-r2 <- mask(r2, m)
-
-r1 <- mask(r1, r2)
-
-plot(r2)
-
-dismo::nicheOverlap(
-    raster::raster(r1), raster::raster(r2), stat = "I"
-)
-
+results <- dplyr::bind_rows(results)
+write.csv(results, paste0("internal/vsp_metrics_", format(Sys.Date(), "%Y%m%d"), ".csv"), row.names = F)

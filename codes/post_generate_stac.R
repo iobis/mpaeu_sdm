@@ -1,3 +1,11 @@
+############################## MPA Europe project ##############################
+########### WP3 - Species and biogenic habitat distributions (UNESCO) ##########
+# October 2025
+# Authors: Silas C. Principe, Pieter Provoost
+# Contact: s.principe@unesco.org
+#
+########################## Generate STAC catalogue #############################
+
 library(reticulate)
 library(glue)
 library(terra)

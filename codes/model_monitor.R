@@ -1,5 +1,15 @@
+############################## MPA Europe project ##############################
+########### WP3 - Species and biogenic habitat distributions (UNESCO) ##########
+# March of 2024
+# Authors: Silas C. Principe, Pieter Provoost
+# Contact: s.principe@unesco.org
+#
+############## Monitor model fitting when running in parallel ##################
+# Run this code in another terminal/process while running the models in parallel
+
+
 library(storr)
-outacro <- "inteval"
+outacro <- "mpaeu"
 st <- storr_rds(paste0(outacro, "_storr"))
 
 cli::cli_h1("Monitoring model {cli::bg_cyan(outacro)}")

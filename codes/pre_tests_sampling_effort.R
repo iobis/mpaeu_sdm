@@ -1,3 +1,11 @@
+############################## MPA Europe project ##############################
+########### WG3 - Species and biogenic habitat distributions (UNESCO) ##########
+# September of 2023
+# Authors: Silas C. Principe, Pieter Provoost
+# Contact: s.principe@unesco.org
+#
+################## Generate layer of sampling effort for tests #################
+
 library(duckdb)
 library(DBI)
 library(h3jsr)

@@ -6,7 +6,7 @@ This work is part of the [MPA Europe project](https://mpa-europe.eu/). OBIS is l
 
 The core functions behind our modelling framework are in the repository [iobis/mpaeu_msdm](https://github.com/iobis/mpaeu_msdm)(from 'methods' SDM), which contains the package `obissdm`. A more detailed documentation of our framework can be found [here](https://iobis.github.io/mpaeu_docs).
 
-Maps are available through a Shiny application, accessible from [shiny.obis.org/distmaps](https://shiny.obis.org/distmaps). Codes used to produce the platform are also open, and are available through [this repository](https://github.com/iobis/mpaeu_map_platform). All results are available on an AWS S3 bucket, as described [here](https://iobis.github.io/mpaeu_docs/data_access.html).
+Maps are available through a Shiny application, accessible from [shiny.obis.org/distmaps](https://shiny.obis.org/distmaps). Codes used to produce the platform are also open, and are available through [this repository](https://github.com/iobis/mpaeu_map_platform). All results are available on an AWS S3 bucket, as described [here](https://iobis.github.io/mpaeu_docs/datause.html).
 
 > [!IMPORTANT]
 > Species distribution models (SDMs) are valuable tools, but it's important to understand how to interpret their results correctly. Before using the maps generated in this project read the documentation available [here](https://iobis.github.io/mpaeu_docs/understanding.html). Results reflect the data available at the time of the project and the modelling decisions made. After this project is concluded, OBIS will continue to develop and improve its SDM framework, so newer versions of the maps may be available in the future.

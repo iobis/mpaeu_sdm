@@ -19,7 +19,6 @@ spl <- read.csv(spf)
 
 sel_species <- spl$taxonID[spl$taxonID %in% c(wwf_1$AphiaID, wwf_2$AphiaID)]
 sel_species <- sel_species[1:4]
-sel_species = 127326
 
 # Fit
 source("codes/model_fit.R")
