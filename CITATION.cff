@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: If you use this work, please cite it as below.
+title: MPA Europe species range maps
+type: dataset
+abstract: Habitat range maps for European marine species
+url: https://github.com/iobis/mpaeu_sdm
+license: CC-BY-IGO-4.0
+authors:
+  - family-names: silasprincipe
+    orcid: "https://orcid.org/0000-0002-8059-6304"
+  - name: Intergovernmental Oceanographic Commission of UNESCO
+    alias: IOC-UNESCO
+    website: "https://obis.org"
+date-released: 2025-10-21
