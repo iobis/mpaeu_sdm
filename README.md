@@ -37,6 +37,7 @@ Cloning this repository and running the main codes will render a directory with 
     ├── check.R                : Check project structure
     ├── sdm_conf.yml           : Configuration file for the models
     ├── datasets_citation.json : Datasets from OBIS/GBIF used in the project
+	├── aws_files_list.zip     : A list of all files available on the AWS S3 bucket
     │
     ├── data
     │   ├── raw                : Source data obtained from repositories (e.g. OBIS, GBIF)
