@@ -1,0 +1,51 @@
+{
+    "title": "Species distribution models for marine species occurring in European waters - OBIS/MPA Europe",
+    "upload_type": "dataset",
+    "description": "The EU Horizon project Marine Protected Areas Europe (MPA Europe, https://mpa-europe.eu) generated priority maps identifying locations within the European seas where Marine Protected Areas (MPAs) would protect the greatest number of species, habitats, and ecosystems. The IOC's Ocean Biodiversity Information System (OBIS) developed Species Distribution Models (SDMs) for more than 12,000 species to serve as biodiversity inputs for the prioritization. The models were generated for both current and future periods (2050 and 2100) under five Shared Socio-economic Pathway (SSP) scenarios.",
+    "creators": [
+        {
+            "name": "Principe, Silas",
+            "orcid": "0000-0002-8059-6304",
+            "affiliation": "Ocean Biodiversity Information System, International Oceanographic Data and Information Exchange, Intergovernmental Oceanographic Commission, UNESCO"
+        },
+        {
+            "name": "Provoost, Pieter",
+            "orcid": "0000-0002-4236-0384",
+            "affiliation": "Ocean Biodiversity Information System, International Oceanographic Data and Information Exchange, Intergovernmental Oceanographic Commission, UNESCO"
+        }
+    ],
+    "contributors": [
+        {
+            "name": "Ocean Biodiversity Information System",
+            "type": "Producer"
+        },
+        {
+            "name": "International Oceanographic Data and Information Exchange",
+            "type": "HostingInstitution"
+        },
+        {
+            "name": "Intergovernmental Oceanographic Commission of UNESCO",
+            "type": "RightsHolder"
+        }
+    ],
+    "license": "CC-BY-4.0",
+    "keywords": [
+        "species distribution models",
+        "ecological niche model",
+        "species range maps"
+    ],
+    "related_identifiers": [
+        {
+            "identifier": "10.5281/zenodo.18718365",
+            "relation": "isSupplementTo",
+            "resource_type": "software",
+            "scheme": "url"
+        }
+    ],
+    "references": [
+        "Ocean Biodiversity information System (OBIS). (2024). Species distribution dashboard for MPA Europe. (version 0.1.0). https://shiny.obis.org/distmaps. Zenodo. https://doi.org/10.5281/zenodo.14524781",
+        "GBIF.org (26 July 2024) GBIF Occurrence Data https://doi.org/10.15468/dl.ubwn8z",
+        "OBIS (25 June 2024) OBIS Occurrence Snapshot. Ocean Biodiversity Information System. Intergovernmental Oceanographic Commission of UNESCO. https://obis.org.",
+        "World Register of Marine Species. Available from https://www.marinespecies.org at VLIZ. Accessed 2024-05-01. doi:10.14284/170."
+    ]
+}
