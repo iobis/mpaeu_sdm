@@ -1,32 +1,41 @@
-# <img src="mpaeu_obis_logo.jpg" align="right" width="240" /> MPA Europe - Species distribution models for marine species occurring in European waters
+# <img src="mpaeu_obis_logo.jpg" align="right" width="240" /> MPA Europe - Pipeline for producing species distribution models for marine species in European waters
 
 ## About the project
 
-This work is part of the [MPA Europe project](https://mpa-europe.eu/). OBIS is leading the WP3, which aims to generate distribution maps for marine species and habitats in Europe. This repository contains the code for generating the SDMs (species distribution models) and stacked SDMs (habitat maps).
+This work is part of the [MPA Europe project](https://mpa-europe.eu/). OBIS led WP3, which aimed to generate distribution maps for marine species and habitats in Europe. This repository contains the code for generating the SDMs (species distribution models) and stacked SDMs (habitat maps).
 
-The core functions behind our modelling framework are in the repository [iobis/mpaeu_msdm](https://github.com/iobis/mpaeu_msdm)(from 'methods' SDM), which contains the package `obissdm`. A more detailed documentation of our framework can be found [here](https://iobis.github.io/mpaeu_docs).
+The core functions behind our modelling framework are in the repository [iobis/mpaeu_msdm](https://github.com/iobis/mpaeu_msdm) (from 'methods' SDM), which contains the package `obissdm`. More detailed documentation of our framework can be found [here](https://iobis.github.io/mpaeu_docs).
 
-Maps are available through a Shiny application, accessible from [shiny.obis.org/distmaps](https://shiny.obis.org/distmaps). Codes used to produce the platform are also open, and are available through [this repository](https://github.com/iobis/mpaeu_map_platform). All results are available on an AWS S3 bucket, as described [here](https://iobis.github.io/mpaeu_docs/datause.html).
+Details on how to access the maps are available on the repository [iobis/mpaeu_maps](https://github.com/iobis/mpaeu_maps). You can explore the models through the [map platform](https://iobis.github.io/mpaeu_map_plat_static). All results are available on an AWS S3 bucket, as described [here](https://iobis.github.io/mpaeu_docs/datause.html).
 
 > [!IMPORTANT]
-> Species distribution models (SDMs) are valuable tools, but it's important to understand how to interpret their results correctly. Before using the maps generated in this project read the documentation available [here](https://iobis.github.io/mpaeu_docs/understanding.html). Results reflect the data available at the time of the project and the modelling decisions made. After this project is concluded, OBIS will continue to develop and improve its SDM framework, so newer versions of the maps may be available in the future.
+> Species distribution models (SDMs) are valuable tools, but it's important to understand how to interpret their results correctly. Before using the maps generated in this project read the documentation available [here](https://iobis.github.io/mpaeu_docs/understanding.html). Results reflect the data available at the time of the project and the modelling decisions made. Now that this project has concluded, OBIS will continue to develop and improve its SDM framework, so newer versions of the maps may be available in the future.
+
+## Associated repositories
+
+- [**iobis/mpaeu_maps**](https://github.com/iobis/mpaeu_maps): details on data access and how to cite the product  
+- [**iobis/mpaeu_msdm**](https://github.com/iobis/mpaeu_msdm): R package for internal use containing the core functions behind our modelling framework  
+- [**iobis/mpaeu_map_platform**](https://github.com/iobis/mpaeu_map_platform): Shiny app developed to host the maps, now deprecated in favor of the new platform  
+- [**iobis/mpaeu_map_plat_static**](https://github.com/iobis/mpaeu_map_plat_static): new platform developed with Svelte to host the maps  
+- [**iobis/mpaeu_docs**](https://github.com/iobis/mpaeu_docs): documentation of the modelling  
+- [**iobis/mpaeu_atlas**](https://github.com/iobis/mpaeu_atlas): atlas application developed with Svelte to host the main results of the project  
 
 ## Replicating the project
 
-This GitHub repository contains only the codes/functions. You can clone it to your computer, and download the remaining data from AWS and from the sources (e.g. Bio-ORACLE, OBIS and GBIF). The easiest way is to run sequentially the 5 main codes (named `p*_`) which organizes the steps.
+This GitHub repository contains only the code/functions. You can clone it to your computer, and download the remaining data from AWS and from the sources (e.g. Bio-ORACLE, OBIS and GBIF). The easiest way is to sequentially run the 5 main scripts (named `p*_`), which organize the steps.
 
-- **p1_prepare_wd.R**: will install the requirements (R and Python packages) and check the folder structure  
-- **p2_download_data.R**: download all necessary data  
-- **p3_prepare_data.R**: used to prepare the data for modelling (including standardization and QC)  
-- **p4_model_distribution.R**: fit the models and make predictions. Code is run in parallel
-- **p5_stack_habitats.R**: stack the SDMs from different groups to produce habitat maps
+- **p1_prepare_wd.R**: installs the requirements (R and Python packages) and checks the folder structure  
+- **p2_download_data.R**: downloads all necessary data  
+- **p3_prepare_data.R**: prepares the data for modelling (including standardization and QC)  
+- **p4_model_distributions.R**: fits the models and makes predictions. The code runs in parallel
+- **p5_stack_habitats.R**: stacks the SDMs from different groups to produce habitat maps
 
 > [!NOTE]
-> If you just want to reproduce the modelling, not using the most recent data, you can skip step 3 and use the prepared data available on the AWS S3 bucket, which is downloaded through step 2 (`p2_download_data.R`).
+> If you just want to reproduce the modelling without using the most recent data, you can skip step 3 and use the prepared data available on the AWS S3 bucket, which is downloaded through step 2 (`p2_download_data.R`).
 
 ## Directory structure
 
-Cloning this repository and running the main codes will render a directory with the following structure:
+Cloning this repository and running the main scripts will produce a directory with the following structure:
 
 
     ├── README.md              : Description of this repository
@@ -37,7 +46,7 @@ Cloning this repository and running the main codes will render a directory with 
     ├── check.R                : Check project structure
     ├── sdm_conf.yml           : Configuration file for the models
     ├── datasets_citation.json : Datasets from OBIS/GBIF used in the project
-	├── aws_files_list.zip     : A list of all files available on the AWS S3 bucket
+    ├── aws_files_list.zip     : A list of all files available on the AWS S3 bucket
     │
     ├── data
     │   ├── raw                : Source data obtained from repositories (e.g. OBIS, GBIF)
@@ -50,29 +59,29 @@ Cloning this repository and running the main codes will render a directory with 
     │       ├── terrain        : Data for terrain variables (e.g. bathymetry)
     │       └── future         : Data for future period (a folder for each scenario)
     │
-    ├── codes                  : All codes
+    ├── codes                  : All scripts
     │
     ├── functions              : Functions used in the project
     │
     ├── results                : Results for the SDMs - see details below
     │
-    └── analysis               : Short analysis done during the project
+    └── analysis               : Short analyses done during the project
 
-## Main codes
+## Main scripts
 
-As already noted, most of the components of the SDM framework are provided through the [`obissdm` package](https://github.com/iobis/mpaeu_msdm). The codes and functions of this repository only _operationalize_ the modelling.
+As already noted, most of the components of the SDM framework are provided through the [`obissdm` package](https://github.com/iobis/mpaeu_msdm). The scripts and functions of this repository only _operationalize_ the modelling.
 
-Codes are all commented, with additional information provided on headers. In general, codes follow this naming convention:
+Scripts are all commented, with additional information provided in the headers. In general, scripts follow this naming convention:
 
 - check\_\*: check species occurring in an area, etc.
 - get\_\*: obtain data for something.
 - prepare\_\*: prepare the data to be used.
-- model\_\*: modeling the species’ distribution.
-- pre_tests\_\*: tests with virtual species or other tests.
+- model\_\*: model the species' distribution.
+- pre_tests\_\*: run tests with virtual species or other tests.
 
-The code named `model_subset.R` enable you to pass a subset of species for modelling (instead of the full list). If you want to run models for just a subset of species, don't run the code `p4_model_distributions.R` and run this one instead.
+The script named `model_subset.R` enables you to pass a subset of species for modelling (instead of the full list). If you want to run models for just a subset of species, don't run the script `p4_model_distributions.R`; run this one instead.
 
-Below you can see a description of the codes used in this project:
+Below you can see a description of the scripts used in this project:
 
 ``` mermaid
 flowchart
@@ -172,7 +181,7 @@ flowchart
 
 ## Running models for the full list of species
 
-Ensure that the working directory is correctly built. From **the root of the working directory** run the 3 first steps:
+Ensure that the working directory is correctly built. From **the root of the working directory** run the first 3 steps:
 
 ``` bash
 Rscript codes/p1_prepare_wd.R
@@ -202,11 +211,11 @@ The results are organized as:
 
 `taxonid={aphiaID}/model={acronym of model run}/<folder> OR <file>`
 
-With folders being 'figures', 'metrics', 'models' or 'predictions'
+Folders can be 'figures', 'metrics', 'models' or 'predictions'.
 
 All files will contain `taxonid={aphiaID}_model={acronym of model run}` as part of their name.
 
-Two files are saved on the root: 'taxonid={aphiaID}_model={acronym of model run}_what=fitocc.parquet', which contain the points used for model fitting, and 'taxonid={aphiaID}_model={acronym of model run}_what=log.json', a log file containing rich details about model fitting. A third file may be added later, 'taxonid={aphiaID}_model={acronym of model run}_what=experteval.json', which contains the expert evaluation results.
+Two files are saved in the root: 'taxonid={aphiaID}_model={acronym of model run}_what=fitocc.parquet', which contains the points used for model fitting, and 'taxonid={aphiaID}_model={acronym of model run}_what=log.json', a log file containing rich details about model fitting. A third file may be added later, 'taxonid={aphiaID}_model={acronym of model run}_what=experteval.json', which contains the expert evaluation results.
 
 ## Additional information
 
@@ -230,10 +239,10 @@ World Register of Marine Species. Available from https://www.marinespecies.org a
 
 ## Important
 
-This was a 3 years long project, which was concluded in 2025. Consider that:
+This was a three-year project, which concluded in 2025. Consider that:
 - New data is being added to OBIS and GBIF continuously, so results may differ if you replicate the project at a later date. The predictions reflect the data available at the time of the project.
 - SDM is an area of active research, and new methods are being developed and improved continuously. The methods used in this project may be outdated in the future.
-- New data access pathways were created to OBIS data after completion of the data processing phase of this project (see https://github.com/iobis/obis-open-data and https://github.com/iobis/speciesgrids). Thus, some of the data download codes may not work as expected in the future. We added notes in the code, but you may need to adapt them to the new data access methods.
+- New pathways to access OBIS data were created after completion of the data processing phase of this project (see https://github.com/iobis/obis-open-data and https://github.com/iobis/speciesgrids). Thus, some of the data download scripts may not work as expected in the future. We added notes in the code, but you may need to adapt them to the new data access methods.
 
 ## Updates
 

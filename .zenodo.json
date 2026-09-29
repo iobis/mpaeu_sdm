@@ -1,7 +1,7 @@
 {
-    "title": "Species distribution models for marine species occurring in European waters - OBIS/MPA Europe",
-    "upload_type": "dataset",
-    "description": "The EU Horizon project Marine Protected Areas Europe (MPA Europe, https://mpa-europe.eu) generated priority maps identifying locations within the European seas where Marine Protected Areas (MPAs) would protect the greatest number of species, habitats, and ecosystems. The IOC's Ocean Biodiversity Information System (OBIS) developed Species Distribution Models (SDMs) for more than 12,000 species to serve as biodiversity inputs for the prioritization. The models were generated for both current and future periods (2050 and 2100) under five Shared Socio-economic Pathway (SSP) scenarios.",
+    "title": "Pipeline for producing species distribution models for marine species in European waters — OBIS/MPA Europe",
+    "upload_type": "software",
+    "description": "The EU Horizon project <a href=\"https://mpa-europe.eu\">Marine Protected Areas Europe (MPA Europe)</a> generated priority maps identifying locations within the European seas where Marine Protected Areas (MPAs) would protect the greatest number of species, habitats, and ecosystems. The IOC's Ocean Biodiversity Information System (OBIS) led WP3 of the project, developing Species Distribution Models (SDMs) for more than 12,000 species and stacked SDMs (biogenic habitat maps) to serve as biodiversity inputs for the prioritization. The models were generated for both current and future periods (2050 and 2100) under five Shared Socio-economic Pathway (SSP) scenarios. This repository contains the pipeline used to generate the models: it downloads and prepares occurrence data from OBIS and GBIF and environmental data (e.g. Bio-ORACLE), fits and predicts the SDMs, and stacks the results into biogenic habitat maps. Modelling relies on the core functions provided by the companion <code>obissdm</code> R package (<a href=\"https://github.com/iobis/mpaeu_msdm\">iobis/mpaeu_msdm</a>). Results and further documentation are available through the <a href=\"https://github.com/iobis/mpaeu_maps\">iobis/mpaeu_maps</a> and <a href=\"https://github.com/iobis/mpaeu_docs\">iobis/mpaeu_docs</a> repositories, and can be explored on an <a href=\"https://iobis.github.io/mpaeu_map_plat_static\">interactive map platform</a>. This was a three-year project that concluded in 2025; results reflect the data available and modelling decisions made at the time of the project.",
     "creators": [
         {
             "name": "Principe, Silas",
@@ -28,7 +28,7 @@
             "type": "RightsHolder"
         }
     ],
-    "license": "CC-BY-4.0",
+    "license": "CC-BY-IGO-4.0",
     "keywords": [
         "species distribution models",
         "ecological niche model",
@@ -39,6 +39,12 @@
             "identifier": "10.5281/zenodo.18718365",
             "relation": "isSupplementTo",
             "resource_type": "software",
+            "scheme": "url"
+        },
+        {
+            "identifier": "10.5281/zenodo.23018411",
+            "relation": "isSupplementTo",
+            "resource_type": "dataset",
             "scheme": "url"
         }
     ],
