@@ -1,5 +1,10 @@
 # <img src="mpaeu_obis_logo.jpg" align="right" width="240" /> MPA Europe - Pipeline for producing species distribution models for marine species in European waters
 
+[![DOI](https://img.shields.io/badge/DOI-10.5281/zenodo.18718531-blue)](https://doi.org/10.5281/zenodo.18718531)
+[![Products catalogue](https://raw.githubusercontent.com/iobis/badges/refs/heads/main/badges/obis-products_catalogue.svg)](https://products.obis.org/dataset/10-5281-zenodo-18718531)
+[![IOC](https://raw.githubusercontent.com/iobis/badges/refs/heads/main/badges/ioc-hlo1_healthy_ocean.svg)](https://www.ioc.unesco.org/en/mission-and-objectives)
+[![IOC](https://raw.githubusercontent.com/iobis/badges/refs/heads/main/badges/ioc-hlo3_resilience_to_climate_change.svg)](https://www.ioc.unesco.org/en/mission-and-objectives)
+
 ## About the project
 
 This work is part of the [MPA Europe project](https://mpa-europe.eu/). OBIS led WP3, which aimed to generate distribution maps for marine species and habitats in Europe. This repository contains the code for generating the SDMs (species distribution models) and stacked SDMs (habitat maps).
