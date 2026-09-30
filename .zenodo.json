@@ -28,7 +28,7 @@
             "type": "RightsHolder"
         }
     ],
-    "license": "CC-BY-IGO-4.0",
+    "license": "cc-by-4.0",
     "keywords": [
         "species distribution models",
         "ecological niche model",
@@ -39,13 +39,13 @@
             "identifier": "10.5281/zenodo.18718365",
             "relation": "isSupplementTo",
             "resource_type": "software",
-            "scheme": "url"
+            "scheme": "doi"
         },
         {
             "identifier": "10.5281/zenodo.23018411",
             "relation": "isSupplementTo",
             "resource_type": "dataset",
-            "scheme": "url"
+            "scheme": "doi"
         }
     ],
     "references": [
